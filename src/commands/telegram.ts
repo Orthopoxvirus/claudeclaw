@@ -252,6 +252,40 @@ function extensionFromAudioMimeType(mimeType?: string): string {
   }
 }
 
+function extensionFromDocumentMimeType(mimeType?: string): string {
+  if (!mimeType) return "";
+  const map: Record<string, string> = {
+    "application/pdf": ".pdf",
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "text/html": ".html",
+    "text/css": ".css",
+    "text/markdown": ".md",
+    "text/xml": ".xml",
+    "text/javascript": ".js",
+    "application/javascript": ".js",
+    "application/typescript": ".ts",
+    "application/zip": ".zip",
+    "application/gzip": ".gz",
+    "application/x-tar": ".tar",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/msword": ".doc",
+    "application/vnd.ms-excel": ".xls",
+    "application/yaml": ".yaml",
+    "application/x-yaml": ".yaml",
+  };
+  return map[mimeType] || "";
+}
+
+function isGeneralDocument(document?: TelegramDocument): boolean {
+  if (!document) return false;
+  return !isImageDocument(document) && !isAudioDocument(document);
+}
+
 function extractTelegramCommand(text: string): string | null {
   const firstToken = text.trim().split(/\s+/, 1)[0];
   if (!firstToken.startsWith("/")) return null;
@@ -421,6 +455,34 @@ async function downloadVoiceFromMessage(token: string, message: TelegramMessage)
   return localPath;
 }
 
+async function downloadDocumentFromMessage(token: string, message: TelegramMessage): Promise<{ path: string; name: string } | null> {
+  const doc = message.document;
+  if (!doc || !isGeneralDocument(doc)) return null;
+
+  const fileMeta = await callApi<{ ok: boolean; result: TelegramFile }>(token, "getFile", { file_id: doc.file_id });
+  if (!fileMeta.ok || !fileMeta.result.file_path) return null;
+
+  const remotePath = fileMeta.result.file_path;
+  const downloadUrl = `${FILE_API_BASE}${token}/${remotePath}`;
+  const response = await fetch(downloadUrl);
+  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status} ${response.statusText}`);
+
+  const dir = join(process.cwd(), ".claude", "claudeclaw", "inbox", "telegram");
+  await mkdir(dir, { recursive: true });
+
+  const remoteExt = extname(remotePath);
+  const docExt = extname(doc.file_name ?? "");
+  const mimeExt = extensionFromDocumentMimeType(doc.mime_type);
+  const ext = remoteExt || docExt || mimeExt || ".bin";
+  const originalName = doc.file_name ?? `document${ext}`;
+  const filename = `${message.chat.id}-${message.message_id}-${Date.now()}${ext}`;
+  const localPath = join(dir, filename);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  await Bun.write(localPath, bytes);
+  debugLog(`Document download: wrote ${bytes.length} bytes to ${localPath} name=${originalName} mime=${doc.mime_type ?? "unknown"}`);
+  return { path: localPath, name: originalName };
+}
+
 async function handleMyChatMember(update: TelegramMyChatMemberUpdate): Promise<void> {
   const config = getSettings().telegram;
   const chat = update.chat;
@@ -471,6 +533,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const isGroup = chatType === "group" || chatType === "supergroup";
   const hasImage = Boolean((message.photo && message.photo.length > 0) || isImageDocument(message.document));
   const hasVoice = Boolean(message.voice || message.audio || isAudioDocument(message.document));
+  const hasDocument = isGeneralDocument(message.document);
 
   if (!isPrivate && !isGroup) return;
 
@@ -495,7 +558,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     return;
   }
 
-  if (!text.trim() && !hasImage && !hasVoice) {
+  if (!text.trim() && !hasImage && !hasVoice && !hasDocument) {
     debugLog(`Skip message chat=${chatId} from=${userId ?? "unknown"} reason=empty_text`);
     return;
   }
@@ -540,7 +603,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   }
 
   const label = message.from?.username ?? String(userId ?? "unknown");
-  const mediaParts = [hasImage ? "image" : "", hasVoice ? "voice" : ""].filter(Boolean);
+  const mediaParts = [hasImage ? "image" : "", hasVoice ? "voice" : "", hasDocument ? "document" : ""].filter(Boolean);
   const mediaSuffix = mediaParts.length > 0 ? ` [${mediaParts.join("+")}]` : "";
   console.log(
     `[${new Date().toLocaleTimeString()}] Telegram ${label}${mediaSuffix}: "${text.slice(0, 60)}${text.length > 60 ? "..." : ""}"`
@@ -554,11 +617,19 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     let imagePath: string | null = null;
     let voicePath: string | null = null;
     let voiceTranscript: string | null = null;
+    let documentInfo: { path: string; name: string } | null = null;
     if (hasImage) {
       try {
         imagePath = await downloadImageFromMessage(config.token, message);
       } catch (err) {
         console.error(`[Telegram] Failed to download image for ${label}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    if (hasDocument) {
+      try {
+        documentInfo = await downloadDocumentFromMessage(config.token, message);
+      } catch (err) {
+        console.error(`[Telegram] Failed to download document for ${label}: ${err instanceof Error ? err.message : err}`);
       }
     }
     if (hasVoice) {
@@ -618,6 +689,12 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
       promptParts.push(
         "The user attached voice audio, but it could not be transcribed. Respond and ask them to resend a clearer clip."
       );
+    }
+    if (documentInfo) {
+      promptParts.push(`File ${documentInfo.name} - @${documentInfo.path}`);
+      promptParts.push("The user attached a document. Read this file directly before answering.");
+    } else if (hasDocument) {
+      promptParts.push("The user attached a document, but downloading it failed. Respond and ask them to resend.");
     }
     const prefixedPrompt = promptParts.join("\n");
     const result = await runUserMessage("telegram", prefixedPrompt);
