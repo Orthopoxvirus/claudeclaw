@@ -1130,4 +1130,111 @@ export const pageStyles = String.raw`    :root {
       .pill:nth-last-child(2) {
         border-bottom: 0;
       }
+    }
+    .attach-section {
+      border-top: 1px solid #ffffff17;
+      margin-top: 8px;
+      padding-top: 8px;
+      display: grid;
+      gap: 6px;
+    }
+    .attach-section-create {
+      border: 1px solid #ffffff1c;
+      border-radius: 12px;
+      background: #0c1624a6;
+      padding: 10px;
+      margin-top: 0;
+      border-top: 1px solid #ffffff1c;
+    }
+    .attach-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .attach-title {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #bfd4ef;
+    }
+    .attach-buttons {
+      display: flex;
+      gap: 6px;
+    }
+    .attach-btn {
+      height: 26px;
+      padding: 0 10px;
+      border: 1px solid #ffffff2c;
+      border-radius: 999px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      letter-spacing: 0.03em;
+      color: #daebff;
+      background: #ffffff12;
+      cursor: pointer;
+      transition: background 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+    }
+    .attach-btn:hover {
+      background: #ffffff22;
+      border-color: #ffffff44;
+      transform: translateY(-1px);
+    }
+    .attach-list {
+      display: grid;
+      gap: 4px;
+    }
+    .attach-file {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: #070f1a;
+      border: 1px solid #ffffff14;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+    }
+    .attach-file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #e4eefb;
+    }
+    .attach-file-size {
+      color: #8ea8c4;
+      white-space: nowrap;
+    }
+    .attach-file-delete {
+      width: 20px;
+      height: 20px;
+      border: 1px solid #ff7f7f30;
+      border-radius: 999px;
+      font-size: 10px;
+      color: #ffadad;
+      background: #3a141455;
+      cursor: pointer;
+      transition: background 0.16s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .attach-file-delete:hover {
+      background: #4d191970;
+      border-color: #ff8f8f6b;
+    }
+    .attach-empty {
+      color: #8ea8c4;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      font-style: italic;
+    }
+    .attach-status {
+      min-height: 1em;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      color: #a8f1ca;
     }`;

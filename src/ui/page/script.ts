@@ -41,6 +41,16 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     const quickJobsList = $("quick-jobs-list");
     const jobsBubbleEl = $("jobs-bubble");
     const uptimeBubbleEl = $("uptime-bubble");
+    const attachFileInput = $("attachment-file-input");
+    const attachCameraInput = $("attachment-camera-input");
+    const attachFolderInput = $("attachment-folder-input");
+    const createAttachFiles = $("create-attach-files");
+    const createAttachCamera = $("create-attach-camera");
+    const createAttachFolder = $("create-attach-folder");
+    const createAttachList = $("create-attach-list");
+    const createAttachStatus = $("create-attach-status");
+    let pendingId = "";
+    let pendingUploadTarget = "";
     let hbBusy = false;
     let hbSaveBusy = false;
     let use12Hour = localStorage.getItem("clock.format") === "12";
@@ -370,6 +380,18 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
                   '<div>Next run: ' + esc(nextRunText) + "</div>" +
                   '<div>Prompt:</div>' +
                   '<pre class="quick-job-prompt-full">' + esc(String(j.prompt || "")) + "</pre>" +
+                  '<div class="attach-section">' +
+                    '<div class="attach-header">' +
+                      '<span class="attach-title">Attachments</span>' +
+                      '<div class="attach-buttons">' +
+                        '<button class="attach-btn" type="button" data-attach-files="' + escAttr(j.name || "") + '">Files</button>' +
+                        '<button class="attach-btn" type="button" data-attach-camera="' + escAttr(j.name || "") + '">Camera</button>' +
+                        '<button class="attach-btn" type="button" data-attach-folder="' + escAttr(j.name || "") + '">Folder</button>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="attach-list" id="attach-list-' + escAttr(j.name || "") + '">Loading...</div>' +
+                    '<div class="attach-status" id="attach-status-' + escAttr(j.name || "") + '"></div>' +
+                  '</div>' +
                 "</div>"
               ) : (
                 ""
@@ -390,6 +412,7 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       const jobName = String(name || "");
       expandedJobName = expandedJobName === jobName ? "" : jobName;
       rerenderJobsList();
+      if (expandedJobName) loadAttachments(expandedJobName);
     }
 
     async function refreshState() {
@@ -465,9 +488,32 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       smoothScrollTo(y);
     }
 
+    function generatePendingId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function cleanupPending() {
+      if (!pendingId) return;
+      fetch("/api/attachments/pending/" + encodeURIComponent(pendingId), { method: "DELETE" }).catch(function () {});
+      pendingId = "";
+      if (createAttachList) createAttachList.innerHTML = '<span class="attach-empty">No files attached</span>';
+      if (createAttachStatus) createAttachStatus.textContent = "";
+    }
+
     function setQuickView(view, options) {
       if (!quickJobsView || !quickJobForm) return;
-      const showJobs = view === "jobs";
+      var showJobs = view === "jobs";
+      // Switching away from create → clean up pending attachments
+      if (!showJobs && quickView === "jobs") {
+        // entering create view: generate new pending id
+        pendingId = generatePendingId();
+        if (createAttachList) createAttachList.innerHTML = '<span class="attach-empty">No files attached</span>';
+        if (createAttachStatus) createAttachStatus.textContent = "";
+      }
+      if (showJobs && quickView === "create" && options && options.user) {
+        // user navigated back to jobs list → clean up pending
+        cleanupPending();
+      }
       quickJobsView.classList.toggle("quick-view-hidden", !showJobs);
       quickJobForm.classList.toggle("quick-view-hidden", showJobs);
       quickView = showJobs ? "jobs" : "create";
@@ -896,13 +942,17 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
               time: target.time,
               prompt,
               recurring: quickJobRecurring ? quickJobRecurring.checked : true,
+              pendingId: pendingId || undefined,
             }),
           });
           const out = await res.json();
           if (!out.ok) throw new Error(out.error || "failed");
+          pendingId = "";
           quickJobStatus.textContent = "Added to jobs list.";
           if (quickJobsStatus) quickJobsStatus.textContent = "Added " + out.name;
           quickJobPrompt.value = "";
+          if (createAttachList) createAttachList.innerHTML = '<span class="attach-empty">No files attached</span>';
+          if (createAttachStatus) createAttachStatus.textContent = "";
           updateQuickJobUi();
           setQuickView("jobs", { scroll: true });
           await refreshState();
@@ -913,6 +963,229 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         }
       });
     }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / 1048576).toFixed(1) + " MB";
+    }
+
+    async function loadAttachments(jobName) {
+      const listEl = document.getElementById("attach-list-" + jobName);
+      if (!listEl) return;
+      try {
+        const res = await fetch("/api/jobs/" + encodeURIComponent(jobName) + "/attachments");
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        const files = data.files || [];
+        if (!files.length) {
+          listEl.innerHTML = '<span class="attach-empty">No files attached</span>';
+          return;
+        }
+        listEl.innerHTML = files.map(function (f) {
+          return (
+            '<div class="attach-file">' +
+              '<span class="attach-file-name">' + esc(f.name) + '</span>' +
+              '<span class="attach-file-size">' + formatBytes(f.size) + '</span>' +
+              '<button class="attach-file-delete" type="button" data-delete-attach-job="' + escAttr(jobName) + '" data-delete-attach-file="' + escAttr(f.name) + '">x</button>' +
+            '</div>'
+          );
+        }).join("");
+      } catch (err) {
+        listEl.innerHTML = '<span class="attach-empty">Failed to load</span>';
+      }
+    }
+
+    async function uploadFiles(jobName, fileList) {
+      const statusEl = document.getElementById("attach-status-" + jobName);
+      if (!fileList || fileList.length === 0) return;
+      const form = new FormData();
+      for (let i = 0; i < fileList.length; i++) {
+        form.append("files", fileList[i]);
+      }
+      if (statusEl) statusEl.textContent = "Uploading " + fileList.length + " file(s)...";
+      try {
+        const res = await fetch("/api/jobs/" + encodeURIComponent(jobName) + "/attachments", {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        const msg = "Uploaded " + (data.saved || []).length + " file(s)";
+        if (statusEl) statusEl.textContent = data.errors && data.errors.length ? msg + " (" + data.errors.join("; ") + ")" : msg;
+        loadAttachments(jobName);
+      } catch (err) {
+        if (statusEl) statusEl.textContent = "Upload failed: " + (err instanceof Error ? err.message : err);
+      }
+    }
+
+    // ---- Pending attachment helpers (create form) ----
+
+    async function loadPendingAttachments() {
+      if (!createAttachList || !pendingId) return;
+      try {
+        var res = await fetch("/api/attachments/pending/" + encodeURIComponent(pendingId));
+        var data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        var files = data.files || [];
+        if (!files.length) {
+          createAttachList.innerHTML = '<span class="attach-empty">No files attached</span>';
+          return;
+        }
+        createAttachList.innerHTML = files.map(function (f) {
+          return (
+            '<div class="attach-file">' +
+              '<span class="attach-file-name">' + esc(f.name) + '</span>' +
+              '<span class="attach-file-size">' + formatBytes(f.size) + '</span>' +
+              '<button class="attach-file-delete" type="button" data-delete-pending-file="' + escAttr(f.name) + '">x</button>' +
+            '</div>'
+          );
+        }).join("");
+      } catch (err) {
+        createAttachList.innerHTML = '<span class="attach-empty">Failed to load</span>';
+      }
+    }
+
+    async function uploadPendingFiles(fileList) {
+      if (!fileList || fileList.length === 0 || !pendingId) return;
+      var form = new FormData();
+      for (var i = 0; i < fileList.length; i++) {
+        form.append("files", fileList[i]);
+      }
+      if (createAttachStatus) createAttachStatus.textContent = "Uploading " + fileList.length + " file(s)...";
+      try {
+        var res = await fetch("/api/attachments/pending/" + encodeURIComponent(pendingId), {
+          method: "POST",
+          body: form,
+        });
+        var data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        var msg = "Uploaded " + (data.saved || []).length + " file(s)";
+        if (createAttachStatus) createAttachStatus.textContent = data.errors && data.errors.length ? msg + " (" + data.errors.join("; ") + ")" : msg;
+        loadPendingAttachments();
+      } catch (err) {
+        if (createAttachStatus) createAttachStatus.textContent = "Upload failed: " + (err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Create form attachment buttons
+    function triggerInput(inputEl, mode) {
+      if (!inputEl) return;
+      inputEl.dataset.uploadMode = mode;
+      inputEl.click();
+    }
+
+    if (createAttachFiles) {
+      createAttachFiles.addEventListener("click", function () { triggerInput(attachFileInput, "pending"); });
+    }
+    if (createAttachCamera) {
+      createAttachCamera.addEventListener("click", function () { triggerInput(attachCameraInput, "pending"); });
+    }
+    if (createAttachFolder) {
+      createAttachFolder.addEventListener("click", function () { triggerInput(attachFolderInput, "pending"); });
+    }
+
+    // Delete pending attachment
+    document.addEventListener("click", async function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-delete-pending-file]");
+      if (!btn || !(btn instanceof HTMLButtonElement)) return;
+      var fileName = btn.getAttribute("data-delete-pending-file");
+      if (!fileName || !pendingId) return;
+      btn.disabled = true;
+      try {
+        var res = await fetch(
+          "/api/attachments/pending/" + encodeURIComponent(pendingId) + "/" + encodeURIComponent(fileName),
+          { method: "DELETE" }
+        );
+        var data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        loadPendingAttachments();
+      } catch (err) {
+        btn.disabled = false;
+      }
+    });
+
+    // ---- Job attachment buttons (expanded job details) ----
+
+    // Attach files button
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-attach-files]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      var jobName = btn.getAttribute("data-attach-files");
+      if (!jobName || !attachFileInput) return;
+      attachFileInput.dataset.jobName = jobName;
+      attachFileInput.dataset.uploadMode = "job";
+      attachFileInput.click();
+    });
+
+    // Attach camera button
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-attach-camera]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      var jobName = btn.getAttribute("data-attach-camera");
+      if (!jobName || !attachCameraInput) return;
+      attachCameraInput.dataset.jobName = jobName;
+      attachCameraInput.dataset.uploadMode = "job";
+      attachCameraInput.click();
+    });
+
+    // Attach folder button
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-attach-folder]");
+      if (!btn || !(btn instanceof HTMLElement)) return;
+      var jobName = btn.getAttribute("data-attach-folder");
+      if (!jobName || !attachFolderInput) return;
+      attachFolderInput.dataset.jobName = jobName;
+      attachFolderInput.dataset.uploadMode = "job";
+      attachFolderInput.click();
+    });
+
+    // Handle file selection — routes to pending or job upload based on mode
+    [attachFileInput, attachCameraInput, attachFolderInput].forEach(function (input) {
+      if (!input) return;
+      input.addEventListener("change", function () {
+        if (!input.files || input.files.length === 0) return;
+        var mode = input.dataset.uploadMode || "";
+        if (mode === "pending") {
+          uploadPendingFiles(input.files);
+        } else {
+          var jobName = input.dataset.jobName;
+          if (jobName) uploadFiles(jobName, input.files);
+        }
+        input.value = "";
+      });
+    });
+
+    // Delete individual attachment (existing job)
+    document.addEventListener("click", async function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-delete-attach-file]");
+      if (!btn || !(btn instanceof HTMLButtonElement)) return;
+      var jobName = btn.getAttribute("data-delete-attach-job");
+      var fileName = btn.getAttribute("data-delete-attach-file");
+      if (!jobName || !fileName) return;
+      btn.disabled = true;
+      try {
+        var res = await fetch(
+          "/api/jobs/" + encodeURIComponent(jobName) + "/attachments/" + encodeURIComponent(fileName),
+          { method: "DELETE" }
+        );
+        var data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        loadAttachments(jobName);
+      } catch (err) {
+        btn.disabled = false;
+      }
+    });
 
     function esc(s) {
       return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

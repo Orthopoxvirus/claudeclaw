@@ -7,6 +7,7 @@ import { cronMatches, nextCronMatch } from "../cron";
 import { clearJobSchedule, loadJobs } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type HeartbeatConfig, type Settings } from "../config";
+import { augmentPromptWithAttachments } from "../ui/services/attachments";
 import { getDayAndMinuteAtOffset } from "../timezone";
 import { startWebUi, type WebServerHandle } from "../web";
 import type { Job } from "../jobs";
@@ -694,6 +695,7 @@ export async function start(args: string[] = []) {
     for (const job of currentJobs) {
       if (cronMatches(job.schedule, now, currentSettings.timezoneOffsetMinutes)) {
         resolvePrompt(job.prompt)
+          .then((prompt) => augmentPromptWithAttachments(job.name, prompt))
           .then((prompt) => run(job.name, prompt))
           .then((r) => {
             if (job.notify === false) return;

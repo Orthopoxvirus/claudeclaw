@@ -4,6 +4,10 @@ import type { StartWebUiOptions, WebServerHandle } from "./types";
 import { buildState, buildTechnicalInfo, sanitizeSettings } from "./services/state";
 import { readHeartbeatSettings, updateHeartbeatSettings } from "./services/settings";
 import { createQuickJob, deleteJob } from "./services/jobs";
+import {
+  uploadAttachments, listAttachments, deleteAttachment,
+  uploadPendingAttachments, listPendingAttachments, deletePendingAttachment, cleanupPendingAttachments,
+} from "./services/attachments";
 import { readLogs } from "./services/logs";
 
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
@@ -114,11 +118,113 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       if (url.pathname === "/api/jobs/quick" && req.method === "POST") {
         try {
           const body = await req.json();
-          const result = await createQuickJob(body as { time?: unknown; prompt?: unknown });
+          const result = await createQuickJob(body as { time?: unknown; prompt?: unknown; pendingId?: unknown });
           if (opts.onJobsChanged) await opts.onJobsChanged();
           return json({ ok: true, ...result });
         } catch (err) {
           return json({ ok: false, error: String(err) });
+        }
+      }
+
+      // Pending attachment routes: /api/attachments/pending/{id}[/{filename}]
+      const pendingMatch = url.pathname.match(
+        /^\/api\/attachments\/pending\/([^/]+)(?:\/([^/]+))?$/,
+      );
+      if (pendingMatch) {
+        const pendingId = decodeURIComponent(pendingMatch[1]);
+        const fileName = pendingMatch[2]
+          ? decodeURIComponent(pendingMatch[2])
+          : null;
+
+        if (req.method === "POST" && !fileName) {
+          try {
+            const formData = await req.formData();
+            const files: File[] = [];
+            for (const value of formData.getAll("files")) {
+              if (value instanceof File) files.push(value);
+            }
+            if (files.length === 0) {
+              return json({ ok: false, error: "No files provided." });
+            }
+            const result = await uploadPendingAttachments(pendingId, files);
+            return json({ ok: true, ...result });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "GET" && !fileName) {
+          try {
+            const files = await listPendingAttachments(pendingId);
+            return json({ ok: true, files });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "DELETE" && fileName) {
+          try {
+            await deletePendingAttachment(pendingId, fileName);
+            return json({ ok: true });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "DELETE" && !fileName) {
+          try {
+            await cleanupPendingAttachments(pendingId);
+            return json({ ok: true });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+      }
+
+      // Attachment routes: /api/jobs/{name}/attachments[/{filename}]
+      // Must come before the generic job DELETE route
+      const attachMatch = url.pathname.match(
+        /^\/api\/jobs\/([^/]+)\/attachments(?:\/([^/]+))?$/,
+      );
+      if (attachMatch) {
+        const jobName = decodeURIComponent(attachMatch[1]);
+        const fileName = attachMatch[2]
+          ? decodeURIComponent(attachMatch[2])
+          : null;
+
+        if (req.method === "POST" && !fileName) {
+          try {
+            const formData = await req.formData();
+            const files: File[] = [];
+            for (const value of formData.getAll("files")) {
+              if (value instanceof File) files.push(value);
+            }
+            if (files.length === 0) {
+              return json({ ok: false, error: "No files provided." });
+            }
+            const result = await uploadAttachments(jobName, files);
+            return json({ ok: true, ...result });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "GET" && !fileName) {
+          try {
+            const files = await listAttachments(jobName);
+            return json({ ok: true, files });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "DELETE" && fileName) {
+          try {
+            await deleteAttachment(jobName, fileName);
+            return json({ ok: true });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
         }
       }
 

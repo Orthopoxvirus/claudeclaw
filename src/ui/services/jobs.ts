@@ -1,12 +1,14 @@
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { JOBS_DIR } from "../constants";
+import { deleteAllAttachments, promotePendingAttachments } from "./attachments";
 
 export interface QuickJobInput {
   time?: unknown;
   prompt?: unknown;
   recurring?: unknown;
   daily?: unknown;
+  pendingId?: unknown;
 }
 
 export async function createQuickJob(input: QuickJobInput): Promise<{ name: string; schedule: string; recurring: boolean }> {
@@ -40,6 +42,13 @@ export async function createQuickJob(input: QuickJobInput): Promise<{ name: stri
 
   await mkdir(JOBS_DIR, { recursive: true });
   await writeFile(path, content, "utf-8");
+
+  // Move any staged pending attachments to the real job
+  const pendingId = typeof input.pendingId === "string" ? input.pendingId.trim() : "";
+  if (pendingId) {
+    await promotePendingAttachments(pendingId, name);
+  }
+
   return { name, schedule, recurring };
 }
 
@@ -50,4 +59,5 @@ export async function deleteJob(name: string): Promise<void> {
   }
   const path = join(JOBS_DIR, `${jobName}.md`);
   await Bun.file(path).delete();
+  await deleteAllAttachments(jobName);
 }

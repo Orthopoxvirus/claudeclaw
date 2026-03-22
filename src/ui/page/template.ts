@@ -169,6 +169,18 @@ ${pageStyles}
             </div>
           </div>
         </div>
+        <div class="attach-section attach-section-create">
+          <div class="attach-header">
+            <span class="attach-title">Attachments</span>
+            <div class="attach-buttons">
+              <button class="attach-btn" type="button" id="create-attach-files">Files</button>
+              <button class="attach-btn" type="button" id="create-attach-camera">Camera</button>
+              <button class="attach-btn" type="button" id="create-attach-folder">Folder</button>
+            </div>
+          </div>
+          <div class="attach-list" id="create-attach-list"><span class="attach-empty">No files attached</span></div>
+          <div class="attach-status" id="create-attach-status"></div>
+        </div>
         <div class="quick-job-actions">
           <button class="quick-submit" id="quick-job-submit" type="submit">Add to Jobs List</button>
           <div class="quick-status" id="quick-job-status"></div>
@@ -179,6 +191,9 @@ ${pageStyles}
       </form>
     </section>
   </main>
+  <input type="file" id="attachment-file-input" multiple accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.yaml,.yml,.py,.ts,.js,.jsx,.tsx,.html,.css,.zip,.tar,.gz" style="display:none" />
+  <input type="file" id="attachment-camera-input" accept="image/*" capture="environment" style="display:none" />
+  <input type="file" id="attachment-folder-input" webkitdirectory style="display:none" />
 
   <div class="dock-shell">
     <aside class="side-bubble" id="jobs-bubble" aria-live="polite">
