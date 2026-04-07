@@ -768,7 +768,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     let imagePath: string | null = null;
     let voicePath: string | null = null;
     let voiceTranscript: string | null = null;
-    let documentInfo: { path: string; name: string } | null = null;
+    let documentInfo: { localPath: string; originalName: string } | null = null;
     if (hasImage) {
       try {
         imagePath = await downloadImageFromMessage(config.token, message);
@@ -816,16 +816,6 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
       }
     }
 
-    let documentInfo: { localPath: string; originalName: string } | null = null;
-    if (hasDocument) {
-      try {
-        documentInfo = await downloadDocumentFromMessage(config.token, message);
-      } catch (err) {
-        console.error(
-          `[Telegram] Failed to download document for ${label}: ${err instanceof Error ? err.message : err}`
-        );
-      }
-    }
 
     const promptParts = [`[Telegram from ${label}]`];
     if (threadId) promptParts.push(`[thread:${threadId}]`);
