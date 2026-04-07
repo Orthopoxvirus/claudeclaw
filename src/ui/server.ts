@@ -10,7 +10,8 @@ import {
 } from "./services/attachments";
 import { readLogs } from "./services/logs";
 import {
-  createTerminal, listTerminals, getTerminal, sendMessage as sendTerminalMessage, killTerminal,
+  createTerminal, listTerminals, getTerminal, killTerminal,
+  attachWs, detachWs, writeToTerminal, resizeTerminal, getScrollback,
 } from "./services/terminals";
 
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
@@ -269,6 +270,8 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
           const result = createTerminal({
             label: body?.label,
             dangerous: body?.dangerous === true,
+            cols: typeof body?.cols === "number" ? body.cols : undefined,
+            rows: typeof body?.rows === "number" ? body.rows : undefined,
           });
           return json({ ok: true, ...result });
         } catch (err) {
@@ -276,60 +279,25 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
-      const termMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)(?:\/(send))?$/);
+      const termMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)$/);
       if (termMatch) {
         const termId = decodeURIComponent(termMatch[1]);
-        const action = termMatch[2];
 
-        if (req.method === "POST" && action === "send") {
-          const terminal = getTerminal(termId);
-          if (!terminal) return json({ ok: false, error: "Terminal not found" });
-          if (terminal.busy) return json({ ok: false, error: "Terminal is busy" });
-
-          try {
-            const body = await req.json();
-            const message = String(body?.message ?? "").trim();
-            if (!message) return json({ ok: false, error: "message required" });
-
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-              async start(controller) {
-                const send = (data: object) => {
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-                };
-                try {
-                  await sendTerminalMessage(
-                    termId,
-                    message,
-                    (chunk) => send({ type: "chunk", text: chunk }),
-                    (sessionId) => send({ type: "session", sessionId })
-                  );
-                  send({ type: "done" });
-                } catch (err) {
-                  send({ type: "error", message: String(err) });
-                } finally {
-                  controller.close();
-                }
-              },
-            });
-
-            return new Response(stream, {
-              headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-              },
-            });
-          } catch (err) {
-            return json({ ok: false, error: String(err) });
-          }
-        }
-
-        if (req.method === "DELETE" && !action) {
+        if (req.method === "DELETE") {
           const removed = killTerminal(termId);
           return json({ ok: removed });
         }
+      }
+
+      // WebSocket upgrade for terminal streams
+      const wsMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)\/ws$/);
+      if (wsMatch && req.headers.get("upgrade") === "websocket") {
+        const termId = decodeURIComponent(wsMatch[1]);
+        const terminal = getTerminal(termId);
+        if (!terminal) return json({ ok: false, error: "Terminal not found" });
+        return server.upgrade(req, { data: { terminalId: termId } })
+          ? undefined as unknown as Response
+          : new Response("WebSocket upgrade failed", { status: 500 });
       }
 
       if (url.pathname === "/api/chat" && req.method === "POST") {
@@ -375,6 +343,35 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       }
 
       return new Response("Not found", { status: 404 });
+    },
+    websocket: {
+      open(ws) {
+        const termId = (ws.data as { terminalId: string }).terminalId;
+        const wrapper = { send: (data: string) => ws.send(data) };
+        (ws as any)._wrapper = wrapper;
+        attachWs(termId, wrapper);
+        // Send scrollback buffer so client gets history
+        const history = getScrollback(termId);
+        if (history) {
+          ws.send(JSON.stringify({ type: "output", data: history }));
+        }
+      },
+      message(ws, message) {
+        const termId = (ws.data as { terminalId: string }).terminalId;
+        try {
+          const msg = JSON.parse(String(message)) as { type: string; data?: string; cols?: number; rows?: number };
+          if (msg.type === "input" && typeof msg.data === "string") {
+            writeToTerminal(termId, msg.data);
+          } else if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
+            resizeTerminal(termId, msg.cols, msg.rows);
+          }
+        } catch {}
+      },
+      close(ws) {
+        const termId = (ws.data as { terminalId: string }).terminalId;
+        const wrapper = (ws as any)._wrapper;
+        if (wrapper) detachWs(termId, wrapper);
+      },
     },
   });
 

@@ -1,61 +1,114 @@
-import { getSettings } from "../../config";
-import { buildChildEnv, buildSecurityArgs } from "../../runner";
+import * as pty from "node-pty";
 
 interface TerminalState {
   id: string;
-  sessionId: string | null;
   label: string;
   dangerous: boolean;
-  proc: ReturnType<typeof Bun.spawn> | null;
-  busy: boolean;
-  outputBuffer: Array<{ role: string; text: string }>;
+  ptyProcess: pty.IPty;
+  ws: Set<{ send: (data: string) => void }>;
 }
 
 const terminals = new Map<string, TerminalState>();
 let counter = 0;
 
 const MAX_TERMINALS = 10;
-const MAX_BUFFER = 500;
+const SCROLLBACK_SIZE = 5000;
 
-export function createTerminal(opts?: { label?: string; dangerous?: boolean }): {
-  id: string;
-  label: string;
-  dangerous: boolean;
-} {
+// Per-terminal scrollback buffer so new WS clients get history
+const scrollback = new Map<string, string>();
+
+function appendScrollback(id: string, data: string): void {
+  const existing = scrollback.get(id) ?? "";
+  const combined = existing + data;
+  // Keep last ~200KB of output
+  if (combined.length > 200_000) {
+    scrollback.set(id, combined.slice(-200_000));
+  } else {
+    scrollback.set(id, combined);
+  }
+}
+
+export function createTerminal(opts?: {
+  label?: string;
+  dangerous?: boolean;
+  cols?: number;
+  rows?: number;
+}): { id: string; label: string; dangerous: boolean } {
   if (terminals.size >= MAX_TERMINALS) {
     throw new Error(`Terminal limit reached (${MAX_TERMINALS})`);
   }
+
   counter++;
   const id = crypto.randomUUID();
   const dangerous = opts?.dangerous ?? false;
   const label = opts?.label || (dangerous ? `Dangerous ${counter}` : `Terminal ${counter}`);
-  terminals.set(id, {
+  const cols = opts?.cols ?? 120;
+  const rows = opts?.rows ?? 30;
+
+  const args: string[] = [];
+  if (dangerous) {
+    args.push("--dangerously-skip-permissions");
+  }
+
+  const ptyProcess = pty.spawn("claude", args, {
+    name: "xterm-256color",
+    cols,
+    rows,
+    cwd: process.env.HOME || "/config",
+    env: {
+      ...process.env,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+    } as Record<string, string>,
+  });
+
+  const state: TerminalState = {
     id,
-    sessionId: null,
     label,
     dangerous,
-    proc: null,
-    busy: false,
-    outputBuffer: [],
+    ptyProcess,
+    ws: new Set(),
+  };
+
+  scrollback.set(id, "");
+
+  ptyProcess.onData((data: string) => {
+    appendScrollback(id, data);
+    for (const ws of state.ws) {
+      try {
+        ws.send(JSON.stringify({ type: "output", data }));
+      } catch {}
+    }
   });
+
+  ptyProcess.onExit(({ exitCode }) => {
+    const msg = `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`;
+    appendScrollback(id, msg);
+    for (const ws of state.ws) {
+      try {
+        ws.send(JSON.stringify({ type: "output", data: msg }));
+        ws.send(JSON.stringify({ type: "exit", code: exitCode }));
+      } catch {}
+    }
+  });
+
+  terminals.set(id, state);
+  console.log(
+    `[${new Date().toLocaleTimeString()}] Terminal ${label}: created (${dangerous ? "dangerous" : "normal"}, ${cols}x${rows})`
+  );
+
   return { id, label, dangerous };
 }
 
 export function listTerminals(): Array<{
   id: string;
   label: string;
-  sessionId: string | null;
   dangerous: boolean;
-  busy: boolean;
-  messageCount: number;
 }> {
   return Array.from(terminals.values()).map((t) => ({
     id: t.id,
     label: t.label,
-    sessionId: t.sessionId,
     dangerous: t.dangerous,
-    busy: t.busy,
-    messageCount: t.outputBuffer.length,
   }));
 }
 
@@ -63,134 +116,64 @@ export function getTerminal(id: string): TerminalState | undefined {
   return terminals.get(id);
 }
 
-export async function sendMessage(
+export function getScrollback(id: string): string {
+  return scrollback.get(id) ?? "";
+}
+
+export function attachWs(
   id: string,
-  message: string,
-  onChunk: (text: string) => void,
-  onSession: (sessionId: string) => void
-): Promise<void> {
+  ws: { send: (data: string) => void }
+): boolean {
   const terminal = terminals.get(id);
-  if (!terminal) throw new Error("Terminal not found");
-  if (terminal.busy) throw new Error("Terminal is busy");
+  if (!terminal) return false;
+  terminal.ws.add(ws);
+  return true;
+}
 
-  terminal.busy = true;
-  terminal.outputBuffer.push({ role: "user", text: message });
-  trimBuffer(terminal);
+export function detachWs(
+  id: string,
+  ws: { send: (data: string) => void }
+): void {
+  const terminal = terminals.get(id);
+  if (terminal) terminal.ws.delete(ws);
+}
 
+export function writeToTerminal(id: string, data: string): boolean {
+  const terminal = terminals.get(id);
+  if (!terminal) return false;
+  terminal.ptyProcess.write(data);
+  return true;
+}
+
+export function resizeTerminal(
+  id: string,
+  cols: number,
+  rows: number
+): boolean {
+  const terminal = terminals.get(id);
+  if (!terminal) return false;
   try {
-    const { security, model, api } = getSettings();
-
-    const args = ["claude", "-p", message, "--output-format", "stream-json", "--verbose"];
-
-    if (terminal.sessionId) {
-      args.push("--resume", terminal.sessionId);
-    }
-
-    if (terminal.dangerous) {
-      args.push("--dangerously-skip-permissions");
-    } else {
-      args.push(...buildSecurityArgs(security));
-    }
-
-    const normalizedModel = model.trim().toLowerCase();
-    if (model.trim() && normalizedModel !== "glm") {
-      args.push("--model", model.trim());
-    }
-
-    const { CLAUDECODE: _, ...cleanEnv } = process.env;
-    const childEnv = buildChildEnv(cleanEnv as Record<string, string>, model, api);
-
-    console.log(
-      `[${new Date().toLocaleTimeString()}] Terminal ${terminal.label}: running (session: ${terminal.sessionId?.slice(0, 8) ?? "new"})`
-    );
-
-    const proc = Bun.spawn(args, {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: childEnv,
-    });
-    terminal.proc = proc;
-
-    const reader = proc.stdout.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    let fullText = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const event = JSON.parse(trimmed) as Record<string, unknown>;
-
-          if (event.type === "system" && (event.subtype === "init" || event.session_id)) {
-            const sid = event.session_id as string | undefined;
-            if (sid && !terminal.sessionId) {
-              terminal.sessionId = sid;
-              onSession(sid);
-              console.log(
-                `[${new Date().toLocaleTimeString()}] Terminal ${terminal.label}: session ${sid}`
-              );
-            }
-          } else if (event.type === "assistant") {
-            type ContentBlock = { type: string; text?: string };
-            const msg = event.message as { content?: ContentBlock[] } | undefined;
-            const blocks = msg?.content ?? [];
-            for (const block of blocks) {
-              if (block.type === "text" && block.text) {
-                onChunk(block.text);
-                fullText += block.text;
-              }
-            }
-          } else if (event.type === "result") {
-            const resultText = (event as Record<string, unknown>).result as string | undefined;
-            if (resultText && !fullText) {
-              onChunk(resultText);
-              fullText = resultText;
-            }
-          }
-        } catch {}
-      }
-    }
-
-    await proc.exited;
-
-    if (fullText) {
-      terminal.outputBuffer.push({ role: "assistant", text: fullText });
-      trimBuffer(terminal);
-    }
-
-    console.log(`[${new Date().toLocaleTimeString()}] Terminal ${terminal.label}: done`);
-  } finally {
-    terminal.proc = null;
-    terminal.busy = false;
-  }
+    terminal.ptyProcess.resize(cols, rows);
+  } catch {}
+  return true;
 }
 
 export function killTerminal(id: string): boolean {
   const terminal = terminals.get(id);
   if (!terminal) return false;
 
-  if (terminal.proc) {
+  try {
+    terminal.ptyProcess.kill();
+  } catch {}
+
+  for (const ws of terminal.ws) {
     try {
-      terminal.proc.kill("SIGTERM");
+      ws.send(JSON.stringify({ type: "exit", code: -1 }));
     } catch {}
   }
 
   terminals.delete(id);
+  scrollback.delete(id);
   console.log(`[${new Date().toLocaleTimeString()}] Terminal ${terminal.label}: killed`);
   return true;
-}
-
-function trimBuffer(terminal: TerminalState): void {
-  if (terminal.outputBuffer.length > MAX_BUFFER) {
-    terminal.outputBuffer = terminal.outputBuffer.slice(-MAX_BUFFER);
-  }
 }

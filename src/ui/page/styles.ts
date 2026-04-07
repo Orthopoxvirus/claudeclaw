@@ -1418,39 +1418,32 @@ export const pageStyles = String.raw`    :root {
     .terminal-new-dangerous:hover { background: #4d191960; border-color: #ff6b6b66; }
     .terminal-viewport {
       flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      padding: 16px;
-      scrollbar-width: thin;
-      scrollbar-color: #7fa6d5 #091222;
+      overflow: hidden;
+      position: relative;
+      padding: 4px;
     }
-    .terminal-viewport::-webkit-scrollbar { width: 6px; }
-    .terminal-viewport::-webkit-scrollbar-track { background: transparent; }
-    .terminal-viewport::-webkit-scrollbar-thumb { background: #3a5a80; border-radius: 999px; }
     .terminal-empty {
-      margin: auto;
-      text-align: center;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-family: "JetBrains Mono", monospace;
       font-size: 12px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       color: #5a7a9a;
-      padding: 40px 20px;
     }
-    .terminal-input-area {
-      flex-shrink: 0;
-      padding: 10px 12px 12px;
-      border-top: 1px solid #ffffff12;
-      background: #080f1c66;
+    .terminal-xterm-container {
+      width: 100%;
+      height: 100%;
     }
-    .terminal-busy-indicator {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px;
-      color: #5a8aaa;
-      padding: 2px 4px;
-      margin-top: 2px;
+    .terminal-xterm-container .xterm {
+      height: 100%;
+    }
+    .terminal-xterm-container .xterm-viewport {
+      scrollbar-width: thin;
+      scrollbar-color: #3a5a80 transparent;
     }
     .terminal-msg-dangerous-badge {
       display: inline-block;

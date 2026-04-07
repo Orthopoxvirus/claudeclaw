@@ -23,6 +23,9 @@ export function htmlPage(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
   <style>
 ${pageStyles}
   </style>
@@ -223,14 +226,8 @@ ${pageStyles}
       </div>
       <div class="terminal-viewport" id="terminal-viewport">
         <div class="terminal-empty" id="terminal-empty">
-          Create a terminal to start an independent Claude session.
+          Create a terminal to start an independent Claude Code session.
         </div>
-      </div>
-      <div class="terminal-input-area" id="terminal-input-area" hidden>
-        <form id="terminal-form" class="chat-form">
-          <textarea id="terminal-input" class="chat-input" placeholder="Message this terminal..." rows="1" autocomplete="off"></textarea>
-          <button id="terminal-send" class="chat-send" type="submit">Send</button>
-        </form>
       </div>
     </div>
   </main>

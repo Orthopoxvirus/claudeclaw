@@ -1512,24 +1512,21 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       }
     }, 1000);
 
-    // ── Terminals ──
-    var terminalState = {};   // id -> { id, label, dangerous, busy, messages:[], abortController }
+    // ── Terminals (xterm.js + WebSocket) ──
+    var termState = {};   // id -> { id, label, dangerous, xterm, fitAddon, ws, containerEl }
     var activeTerminalId = null;
     var terminalViewport = $("terminal-viewport");
-    var terminalInputArea = $("terminal-input-area");
     var terminalTabsEl = $("terminal-tabs");
     var terminalEmptyEl = $("terminal-empty");
-    var terminalForm = $("terminal-form");
-    var terminalInput = $("terminal-input");
     var terminalNewBtn = $("terminal-new");
     var terminalNewDangerousBtn = $("terminal-new-dangerous");
 
     function renderTerminalTabs() {
       if (!terminalTabsEl) return;
       terminalTabsEl.textContent = "";
-      var ids = Object.keys(terminalState);
+      var ids = Object.keys(termState);
       for (var i = 0; i < ids.length; i++) {
-        var t = terminalState[ids[i]];
+        var t = termState[ids[i]];
         var btn = document.createElement("button");
         btn.className = "terminal-tab" +
           (t.id === activeTerminalId ? " terminal-tab-active" : "") +
@@ -1554,83 +1551,135 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       }
     }
 
-    function renderTerminalMessages() {
+    function showTerminalViewport() {
       if (!terminalViewport) return;
-      if (!activeTerminalId || !terminalState[activeTerminalId]) {
-        terminalViewport.textContent = "";
-        if (terminalEmptyEl) {
-          terminalViewport.appendChild(terminalEmptyEl);
-          terminalEmptyEl.hidden = false;
+      // Hide all xterm containers, show active one
+      var ids = Object.keys(termState);
+      for (var i = 0; i < ids.length; i++) {
+        var t = termState[ids[i]];
+        if (t.containerEl) t.containerEl.style.display = t.id === activeTerminalId ? "block" : "none";
+      }
+      if (terminalEmptyEl) terminalEmptyEl.style.display = activeTerminalId ? "none" : "";
+      // Fit active terminal
+      if (activeTerminalId && termState[activeTerminalId]) {
+        var active = termState[activeTerminalId];
+        if (active.fitAddon) {
+          try { active.fitAddon.fit(); } catch(_) {}
         }
-        if (terminalInputArea) terminalInputArea.hidden = true;
-        return;
+        if (active.xterm) active.xterm.focus();
       }
-      if (terminalEmptyEl) terminalEmptyEl.hidden = true;
-      var t = terminalState[activeTerminalId];
-      terminalViewport.textContent = "";
-
-      if (t.messages.length === 0) {
-        var hint = document.createElement("div");
-        hint.className = "terminal-empty";
-        hint.textContent = "Send a message to start this session.";
-        terminalViewport.appendChild(hint);
-      }
-
-      for (var i = 0; i < t.messages.length; i++) {
-        var msg = t.messages[i];
-        var msgEl = document.createElement("div");
-        msgEl.className = "chat-msg " + (msg.role === "user" ? "chat-msg-user" : "chat-msg-assistant");
-        if (msg.streaming) msgEl.className += " chat-msg-streaming";
-
-        var roleEl = document.createElement("div");
-        roleEl.className = "chat-msg-role";
-        roleEl.textContent = msg.role === "user" ? "You" : "Claude";
-        msgEl.appendChild(roleEl);
-
-        var textEl = document.createElement("div");
-        textEl.className = "chat-msg-text";
-        textEl.textContent = msg.text || "";
-        msgEl.appendChild(textEl);
-
-        if (msg.streaming && t.busy) {
-          var elapsed = document.createElement("div");
-          elapsed.className = "terminal-busy-indicator";
-          elapsed.textContent = fmtElapsed(Date.now() - (t.startedAt || Date.now()));
-          msgEl.appendChild(elapsed);
-        }
-        terminalViewport.appendChild(msgEl);
-      }
-      terminalViewport.scrollTop = terminalViewport.scrollHeight;
-
-      if (terminalInputArea) terminalInputArea.hidden = false;
     }
 
     function switchTerminal(id) {
       activeTerminalId = id;
       renderTerminalTabs();
-      renderTerminalMessages();
-      var tInput = $("terminal-input");
-      if (tInput) tInput.focus();
+      showTerminalViewport();
     }
 
     async function createNewTerminal(dangerous) {
+      if (!terminalViewport || typeof Terminal === "undefined") return;
+
+      // Get approximate dimensions from viewport
+      var vpRect = terminalViewport.getBoundingClientRect();
+      var approxCols = Math.max(40, Math.floor(vpRect.width / 9));
+      var approxRows = Math.max(10, Math.floor(vpRect.height / 18));
+
       try {
         var res = await fetch("/api/terminals", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dangerous: dangerous }),
+          body: JSON.stringify({ dangerous: dangerous, cols: approxCols, rows: approxRows }),
         });
         var data = await res.json();
         if (!data.ok) { console.error("Create terminal failed:", data.error); return; }
-        terminalState[data.id] = {
+
+        // Create xterm instance
+        var term = new Terminal({
+          cursorBlink: true,
+          fontSize: 13,
+          fontFamily: "'JetBrains Mono', monospace",
+          theme: {
+            background: "#0a1220",
+            foreground: "#e4eefb",
+            cursor: "#9be7ff",
+            selectionBackground: "#1a4a7a88",
+            black: "#0a1220",
+            red: "#ff6b6b",
+            green: "#3cb879",
+            yellow: "#f0c674",
+            blue: "#7dc5ff",
+            magenta: "#c792ea",
+            cyan: "#9be7ff",
+            white: "#e4eefb",
+            brightBlack: "#5a7a9a",
+            brightRed: "#ff9b9b",
+            brightGreen: "#6fd8a0",
+            brightYellow: "#f8de7e",
+            brightBlue: "#a8dcff",
+            brightMagenta: "#ddb3f5",
+            brightCyan: "#bef0ff",
+            brightWhite: "#ffffff",
+          },
+          allowProposedApi: true,
+          scrollback: 5000,
+        });
+
+        var fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        // Create container div
+        var container = document.createElement("div");
+        container.className = "terminal-xterm-container";
+        container.setAttribute("data-terminal-id", data.id);
+        terminalViewport.appendChild(container);
+
+        term.open(container);
+        try { fitAddon.fit(); } catch(_) {}
+
+        // Connect WebSocket
+        var wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+        var wsUrl = wsProtocol + "//" + location.host + "/api/terminals/" + encodeURIComponent(data.id) + "/ws";
+        var ws = new WebSocket(wsUrl);
+
+        ws.onmessage = function(event) {
+          try {
+            var msg = JSON.parse(event.data);
+            if (msg.type === "output") {
+              term.write(msg.data);
+            } else if (msg.type === "exit") {
+              term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
+            }
+          } catch(_) {}
+        };
+
+        ws.onclose = function() {
+          term.write("\r\n\x1b[90m[Disconnected]\x1b[0m\r\n");
+        };
+
+        // Forward keypresses to backend
+        term.onData(function(input) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "input", data: input }));
+          }
+        });
+
+        // Handle resize
+        term.onResize(function(size) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "resize", cols: size.cols, rows: size.rows }));
+          }
+        });
+
+        termState[data.id] = {
           id: data.id,
           label: data.label,
           dangerous: data.dangerous,
-          busy: false,
-          messages: [],
-          abortController: null,
-          startedAt: 0,
+          xterm: term,
+          fitAddon: fitAddon,
+          ws: ws,
+          containerEl: container,
         };
+
         switchTerminal(data.id);
       } catch (err) {
         console.error("Create terminal error:", err);
@@ -1638,100 +1687,22 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     }
 
     async function closeTerminal(id) {
-      var t = terminalState[id];
-      if (t && t.abortController) t.abortController.abort();
+      var t = termState[id];
+      if (t) {
+        if (t.ws) try { t.ws.close(); } catch(_) {}
+        if (t.xterm) t.xterm.dispose();
+        if (t.containerEl && t.containerEl.parentNode) t.containerEl.parentNode.removeChild(t.containerEl);
+      }
       try {
         await fetch("/api/terminals/" + encodeURIComponent(id), { method: "DELETE" });
       } catch (_) {}
-      delete terminalState[id];
+      delete termState[id];
       if (activeTerminalId === id) {
-        var remaining = Object.keys(terminalState);
+        var remaining = Object.keys(termState);
         activeTerminalId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
       }
       renderTerminalTabs();
-      renderTerminalMessages();
-    }
-
-    async function sendTerminalMsg() {
-      if (!activeTerminalId) return;
-      var t = terminalState[activeTerminalId];
-      if (!t || t.busy) return;
-      var tInput = $("terminal-input");
-      if (!tInput) return;
-      var message = (tInput.value || "").trim();
-      if (!message) return;
-
-      tInput.value = "";
-      autoResizeTerminalInput();
-      t.busy = true;
-      t.startedAt = Date.now();
-      t.messages.push({ role: "user", text: message });
-      var assistantIdx = t.messages.length;
-      t.messages.push({ role: "assistant", text: "", streaming: true });
-      renderTerminalMessages();
-
-      t.abortController = new AbortController();
-      try {
-        var res = await fetch("/api/terminals/" + encodeURIComponent(t.id) + "/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: message }),
-          signal: t.abortController.signal,
-        });
-        if (!res.body) throw new Error("No response body");
-
-        var reader = res.body.getReader();
-        var dec = new TextDecoder();
-        var buf = "";
-
-        while (true) {
-          var read = await reader.read();
-          if (read.done) break;
-          buf += dec.decode(read.value, { stream: true });
-          var lines = buf.split("\\n");
-          buf = lines.pop() || "";
-          for (var li = 0; li < lines.length; li++) {
-            var line = lines[li];
-            if (!line.startsWith("data: ")) continue;
-            try {
-              var ev = JSON.parse(line.slice(6));
-              if (ev.type === "chunk") {
-                t.messages[assistantIdx].text += ev.text;
-                renderTerminalMessages();
-              } else if (ev.type === "done") {
-                t.messages[assistantIdx].streaming = false;
-                renderTerminalMessages();
-              } else if (ev.type === "error") {
-                t.messages[assistantIdx].text += "\\n[Error: " + ev.message + "]";
-                t.messages[assistantIdx].streaming = false;
-                renderTerminalMessages();
-              }
-            } catch (_) {}
-          }
-        }
-        t.messages[assistantIdx].streaming = false;
-        renderTerminalMessages();
-      } catch (err) {
-        var cancelled = err && err.name === "AbortError";
-        t.messages[assistantIdx].text = cancelled
-          ? (t.messages[assistantIdx].text || "[Cancelled]")
-          : "[Failed: " + String(err) + "]";
-        t.messages[assistantIdx].streaming = false;
-        renderTerminalMessages();
-      } finally {
-        t.busy = false;
-        t.abortController = null;
-        renderTerminalTabs();
-        var tInput2 = $("terminal-input");
-        if (tInput2) tInput2.focus();
-      }
-    }
-
-    function autoResizeTerminalInput() {
-      var el = $("terminal-input");
-      if (!el) return;
-      el.style.height = "auto";
-      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+      showTerminalViewport();
     }
 
     if (terminalNewBtn) terminalNewBtn.addEventListener("click", function() { createNewTerminal(false); });
@@ -1750,30 +1721,9 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       });
     }
 
-    if (terminalForm) {
-      terminalForm.addEventListener("submit", function(e) {
-        e.preventDefault();
-        sendTerminalMsg();
-      });
-    }
-
-    if (terminalInput) {
-      terminalInput.addEventListener("input", autoResizeTerminalInput);
-      terminalInput.addEventListener("keydown", function(e) {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendTerminalMsg();
-        }
-      });
-    }
-
-    // Update terminal busy indicators every second
-    setInterval(function() {
-      if (!activeTerminalId) return;
-      var t = terminalState[activeTerminalId];
-      if (!t || !t.busy) return;
-      var indicators = terminalViewport ? terminalViewport.querySelectorAll(".terminal-busy-indicator") : [];
-      for (var i = 0; i < indicators.length; i++) {
-        indicators[i].textContent = fmtElapsed(Date.now() - t.startedAt);
+    // Refit terminals on window resize
+    window.addEventListener("resize", function() {
+      if (activeTerminalId && termState[activeTerminalId] && termState[activeTerminalId].fitAddon) {
+        try { termState[activeTerminalId].fitAddon.fit(); } catch(_) {}
       }
-    }, 1000);`;
+    });`;
