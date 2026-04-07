@@ -112,6 +112,11 @@ ${pageStyles}
     </article>
   </section>
   <main class="stage">
+    <nav class="tab-nav" role="tablist" aria-label="Main navigation">
+      <button class="tab-btn tab-btn-active" id="tab-dashboard" type="button" role="tab" aria-selected="true" aria-controls="dashboard-panel">Dashboard</button>
+      <button class="tab-btn" id="tab-chat" type="button" role="tab" aria-selected="false" aria-controls="chat-panel">Chat</button>
+    </nav>
+    <div id="dashboard-panel">
     <section class="hero">
       <div class="logo-art" role="img" aria-label="Lobster ASCII art logo">
         <div class="logo-top"><span>🦞</span><span>🦞</span></div>
@@ -190,6 +195,23 @@ ${pageStyles}
         </div>
       </form>
     </section>
+    </div>
+    <div id="chat-panel" class="chat-panel" hidden>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-area">
+        <form id="chat-form" class="chat-form">
+          <textarea
+            id="chat-input"
+            class="chat-input"
+            placeholder="Message Claude..."
+            rows="1"
+            autocomplete="off"
+          ></textarea>
+          <button id="chat-cancel" class="chat-cancel" type="button" hidden>Cancel</button>
+          <button id="chat-send" class="chat-send" type="submit">Send</button>
+        </form>
+      </div>
+    </div>
   </main>
   <input type="file" id="attachment-file-input" multiple accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.yaml,.yml,.py,.ts,.js,.jsx,.tsx,.html,.css,.zip,.tar,.gz" style="display:none" />
   <input type="file" id="attachment-camera-input" accept="image/*" capture="environment" style="display:none" />
