@@ -102,7 +102,7 @@ function isNotFoundError(error: unknown): boolean {
   return /enoent|no such file or directory/i.test(message);
 }
 
-function buildChildEnv(baseEnv: Record<string, string>, model: string, api: string): Record<string, string> {
+export function buildChildEnv(baseEnv: Record<string, string>, model: string, api: string): Record<string, string> {
   const childEnv: Record<string, string> = { ...baseEnv };
   const normalizedModel = model.trim().toLowerCase();
 
@@ -224,7 +224,7 @@ export async function ensureProjectClaudeMd(): Promise<void> {
   }
 }
 
-function buildSecurityArgs(security: SecurityConfig): string[] {
+export function buildSecurityArgs(security: SecurityConfig): string[] {
   const args: string[] = ["--dangerously-skip-permissions"];
 
   switch (security.level) {

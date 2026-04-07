@@ -1314,6 +1314,158 @@ export const pageStyles = String.raw`    :root {
       animation: caret 2s step-end infinite;
     }
 
+    /* ── Terminals panel ── */
+    .terminals-panel {
+      display: flex;
+      flex-direction: column;
+      width: min(100%, 920px);
+      min-width: min(680px, 100%);
+      max-width: 100%;
+      height: calc(100svh - 280px);
+      min-height: 400px;
+      text-align: left;
+      border: 1px solid #ffffff22;
+      border-radius: 16px;
+      background:
+        radial-gradient(120% 100% at 100% 0%, #7dc5ff12, transparent 55%),
+        linear-gradient(180deg, #0e1a2a88 0%, #0a1220a8 100%);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 14px 34px #00000045;
+      overflow: hidden;
+    }
+    .terminals-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #ffffff12;
+      background: #080f1c66;
+      flex-shrink: 0;
+    }
+    .terminals-tabs {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .terminals-tabs::-webkit-scrollbar { display: none; }
+    .terminal-tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #ffffff1a;
+      border-radius: 999px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      color: #8a9ab0;
+      background: transparent;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .terminal-tab:hover { color: #c8d8f0; background: #ffffff0c; }
+    .terminal-tab-active {
+      background: #0e2040cc;
+      border-color: #ffffff30;
+      color: #eef4ff;
+    }
+    .terminal-tab-dangerous { border-color: #ff6b6b30; }
+    .terminal-tab-dangerous.terminal-tab-active { border-color: #ff6b6b55; }
+    .terminal-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      font-size: 10px;
+      line-height: 1;
+      color: #667;
+      cursor: pointer;
+      transition: color 0.12s, background 0.12s;
+    }
+    .terminal-tab-close:hover { color: #ff9b9b; background: #ff6b6b22; }
+    .terminals-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .terminal-new-btn {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid #3cb87944;
+      border-radius: 999px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      letter-spacing: 0.03em;
+      color: #a0d8b8;
+      background: #1a3a2a44;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .terminal-new-btn:hover { background: #1f6f4740; border-color: #3cb87966; }
+    .terminal-new-dangerous {
+      border-color: #ff6b6b44;
+      color: #ffaaaa;
+      background: #3a1a1a44;
+    }
+    .terminal-new-dangerous:hover { background: #4d191960; border-color: #ff6b6b66; }
+    .terminal-viewport {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px;
+      scrollbar-width: thin;
+      scrollbar-color: #7fa6d5 #091222;
+    }
+    .terminal-viewport::-webkit-scrollbar { width: 6px; }
+    .terminal-viewport::-webkit-scrollbar-track { background: transparent; }
+    .terminal-viewport::-webkit-scrollbar-thumb { background: #3a5a80; border-radius: 999px; }
+    .terminal-empty {
+      margin: auto;
+      text-align: center;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #5a7a9a;
+      padding: 40px 20px;
+    }
+    .terminal-input-area {
+      flex-shrink: 0;
+      padding: 10px 12px 12px;
+      border-top: 1px solid #ffffff12;
+      background: #080f1c66;
+    }
+    .terminal-busy-indicator {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      color: #5a8aaa;
+      padding: 2px 4px;
+      margin-top: 2px;
+    }
+    .terminal-msg-dangerous-badge {
+      display: inline-block;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #ff9b9b;
+      background: #ff6b6b18;
+      border: 1px solid #ff6b6b30;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+    }
+
     @media (max-width: 640px) {
       .stage {
         padding-top: 50px;

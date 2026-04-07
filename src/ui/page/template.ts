@@ -115,6 +115,7 @@ ${pageStyles}
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn tab-btn-active" id="tab-dashboard" type="button" role="tab" aria-selected="true" aria-controls="dashboard-panel">Dashboard</button>
       <button class="tab-btn" id="tab-chat" type="button" role="tab" aria-selected="false" aria-controls="chat-panel">Chat</button>
+      <button class="tab-btn" id="tab-terminals" type="button" role="tab" aria-selected="false" aria-controls="terminals-panel">Terminals</button>
     </nav>
     <div id="dashboard-panel">
     <section class="hero">
@@ -209,6 +210,26 @@ ${pageStyles}
           ></textarea>
           <button id="chat-cancel" class="chat-cancel" type="button" hidden>Cancel</button>
           <button id="chat-send" class="chat-send" type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+    <div id="terminals-panel" class="terminals-panel" hidden>
+      <div class="terminals-header">
+        <div class="terminals-tabs" id="terminal-tabs"></div>
+        <div class="terminals-actions">
+          <button class="terminal-new-btn" id="terminal-new" type="button">+ New</button>
+          <button class="terminal-new-btn terminal-new-dangerous" id="terminal-new-dangerous" type="button">+ Dangerous</button>
+        </div>
+      </div>
+      <div class="terminal-viewport" id="terminal-viewport">
+        <div class="terminal-empty" id="terminal-empty">
+          Create a terminal to start an independent Claude session.
+        </div>
+      </div>
+      <div class="terminal-input-area" id="terminal-input-area" hidden>
+        <form id="terminal-form" class="chat-form">
+          <textarea id="terminal-input" class="chat-input" placeholder="Message this terminal..." rows="1" autocomplete="off"></textarea>
+          <button id="terminal-send" class="chat-send" type="submit">Send</button>
         </form>
       </div>
     </div>

@@ -1208,8 +1208,10 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     // ── Chat ──
     const tabDashboardBtn = $("tab-dashboard");
     const tabChatBtn = $("tab-chat");
+    const tabTerminalsBtn = $("tab-terminals");
     const dashboardPanel = $("dashboard-panel");
     const chatPanel = $("chat-panel");
+    const terminalsPanel = $("terminals-panel");
     const chatMessages = $("chat-messages");
     const chatForm = $("chat-form");
     const chatInput = $("chat-input");
@@ -1228,8 +1230,8 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     })();
 
     function setActiveTab(tab) {
-      const allBtns = [tabDashboardBtn, tabChatBtn];
-      const allPanels = [dashboardPanel, chatPanel];
+      const allBtns = [tabDashboardBtn, tabChatBtn, tabTerminalsBtn];
+      const allPanels = [dashboardPanel, chatPanel, terminalsPanel];
       allBtns.forEach(b => { if (b) { b.classList.remove("tab-btn-active"); b.setAttribute("aria-selected", "false"); } });
       allPanels.forEach(p => { if (p) p.hidden = true; });
 
@@ -1237,16 +1239,23 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         tabDashboardBtn && tabDashboardBtn.classList.add("tab-btn-active");
         tabDashboardBtn && tabDashboardBtn.setAttribute("aria-selected", "true");
         if (dashboardPanel) dashboardPanel.hidden = false;
-      } else {
+      } else if (tab === "chat") {
         tabChatBtn && tabChatBtn.classList.add("tab-btn-active");
         tabChatBtn && tabChatBtn.setAttribute("aria-selected", "true");
         if (chatPanel) chatPanel.hidden = false;
         if (chatInput) chatInput.focus();
+      } else if (tab === "terminals") {
+        tabTerminalsBtn && tabTerminalsBtn.classList.add("tab-btn-active");
+        tabTerminalsBtn && tabTerminalsBtn.setAttribute("aria-selected", "true");
+        if (terminalsPanel) terminalsPanel.hidden = false;
+        var tInput = $("terminal-input");
+        if (tInput && activeTerminalId) tInput.focus();
       }
     }
 
     if (tabDashboardBtn) tabDashboardBtn.addEventListener("click", () => setActiveTab("dashboard"));
     if (tabChatBtn) tabChatBtn.addEventListener("click", () => setActiveTab("chat"));
+    if (tabTerminalsBtn) tabTerminalsBtn.addEventListener("click", () => setActiveTab("terminals"));
 
     renderChatHistory();
 
@@ -1500,5 +1509,271 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       if (chatBusy && chatMessages) {
         var elapsedEl = chatMessages.querySelector(".chat-msg-elapsed");
         if (elapsedEl) elapsedEl.textContent = fmtElapsed(Date.now() - chatStartedAt);
+      }
+    }, 1000);
+
+    // ── Terminals ──
+    var terminalState = {};   // id -> { id, label, dangerous, busy, messages:[], abortController }
+    var activeTerminalId = null;
+    var terminalViewport = $("terminal-viewport");
+    var terminalInputArea = $("terminal-input-area");
+    var terminalTabsEl = $("terminal-tabs");
+    var terminalEmptyEl = $("terminal-empty");
+    var terminalForm = $("terminal-form");
+    var terminalInput = $("terminal-input");
+    var terminalNewBtn = $("terminal-new");
+    var terminalNewDangerousBtn = $("terminal-new-dangerous");
+
+    function renderTerminalTabs() {
+      if (!terminalTabsEl) return;
+      terminalTabsEl.textContent = "";
+      var ids = Object.keys(terminalState);
+      for (var i = 0; i < ids.length; i++) {
+        var t = terminalState[ids[i]];
+        var btn = document.createElement("button");
+        btn.className = "terminal-tab" +
+          (t.id === activeTerminalId ? " terminal-tab-active" : "") +
+          (t.dangerous ? " terminal-tab-dangerous" : "");
+        btn.setAttribute("data-terminal-id", t.id);
+        btn.type = "button";
+        var labelSpan = document.createElement("span");
+        labelSpan.textContent = t.label;
+        btn.appendChild(labelSpan);
+        if (t.dangerous) {
+          var badge = document.createElement("span");
+          badge.className = "terminal-msg-dangerous-badge";
+          badge.textContent = "DSP";
+          btn.appendChild(badge);
+        }
+        var closeSpan = document.createElement("span");
+        closeSpan.className = "terminal-tab-close";
+        closeSpan.setAttribute("data-close-terminal", t.id);
+        closeSpan.textContent = "\u00d7";
+        btn.appendChild(closeSpan);
+        terminalTabsEl.appendChild(btn);
+      }
+    }
+
+    function renderTerminalMessages() {
+      if (!terminalViewport) return;
+      if (!activeTerminalId || !terminalState[activeTerminalId]) {
+        terminalViewport.textContent = "";
+        if (terminalEmptyEl) {
+          terminalViewport.appendChild(terminalEmptyEl);
+          terminalEmptyEl.hidden = false;
+        }
+        if (terminalInputArea) terminalInputArea.hidden = true;
+        return;
+      }
+      if (terminalEmptyEl) terminalEmptyEl.hidden = true;
+      var t = terminalState[activeTerminalId];
+      terminalViewport.textContent = "";
+
+      if (t.messages.length === 0) {
+        var hint = document.createElement("div");
+        hint.className = "terminal-empty";
+        hint.textContent = "Send a message to start this session.";
+        terminalViewport.appendChild(hint);
+      }
+
+      for (var i = 0; i < t.messages.length; i++) {
+        var msg = t.messages[i];
+        var msgEl = document.createElement("div");
+        msgEl.className = "chat-msg " + (msg.role === "user" ? "chat-msg-user" : "chat-msg-assistant");
+        if (msg.streaming) msgEl.className += " chat-msg-streaming";
+
+        var roleEl = document.createElement("div");
+        roleEl.className = "chat-msg-role";
+        roleEl.textContent = msg.role === "user" ? "You" : "Claude";
+        msgEl.appendChild(roleEl);
+
+        var textEl = document.createElement("div");
+        textEl.className = "chat-msg-text";
+        textEl.textContent = msg.text || "";
+        msgEl.appendChild(textEl);
+
+        if (msg.streaming && t.busy) {
+          var elapsed = document.createElement("div");
+          elapsed.className = "terminal-busy-indicator";
+          elapsed.textContent = fmtElapsed(Date.now() - (t.startedAt || Date.now()));
+          msgEl.appendChild(elapsed);
+        }
+        terminalViewport.appendChild(msgEl);
+      }
+      terminalViewport.scrollTop = terminalViewport.scrollHeight;
+
+      if (terminalInputArea) terminalInputArea.hidden = false;
+    }
+
+    function switchTerminal(id) {
+      activeTerminalId = id;
+      renderTerminalTabs();
+      renderTerminalMessages();
+      var tInput = $("terminal-input");
+      if (tInput) tInput.focus();
+    }
+
+    async function createNewTerminal(dangerous) {
+      try {
+        var res = await fetch("/api/terminals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dangerous: dangerous }),
+        });
+        var data = await res.json();
+        if (!data.ok) { console.error("Create terminal failed:", data.error); return; }
+        terminalState[data.id] = {
+          id: data.id,
+          label: data.label,
+          dangerous: data.dangerous,
+          busy: false,
+          messages: [],
+          abortController: null,
+          startedAt: 0,
+        };
+        switchTerminal(data.id);
+      } catch (err) {
+        console.error("Create terminal error:", err);
+      }
+    }
+
+    async function closeTerminal(id) {
+      var t = terminalState[id];
+      if (t && t.abortController) t.abortController.abort();
+      try {
+        await fetch("/api/terminals/" + encodeURIComponent(id), { method: "DELETE" });
+      } catch (_) {}
+      delete terminalState[id];
+      if (activeTerminalId === id) {
+        var remaining = Object.keys(terminalState);
+        activeTerminalId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      }
+      renderTerminalTabs();
+      renderTerminalMessages();
+    }
+
+    async function sendTerminalMsg() {
+      if (!activeTerminalId) return;
+      var t = terminalState[activeTerminalId];
+      if (!t || t.busy) return;
+      var tInput = $("terminal-input");
+      if (!tInput) return;
+      var message = (tInput.value || "").trim();
+      if (!message) return;
+
+      tInput.value = "";
+      autoResizeTerminalInput();
+      t.busy = true;
+      t.startedAt = Date.now();
+      t.messages.push({ role: "user", text: message });
+      var assistantIdx = t.messages.length;
+      t.messages.push({ role: "assistant", text: "", streaming: true });
+      renderTerminalMessages();
+
+      t.abortController = new AbortController();
+      try {
+        var res = await fetch("/api/terminals/" + encodeURIComponent(t.id) + "/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: message }),
+          signal: t.abortController.signal,
+        });
+        if (!res.body) throw new Error("No response body");
+
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+
+        while (true) {
+          var read = await reader.read();
+          if (read.done) break;
+          buf += dec.decode(read.value, { stream: true });
+          var lines = buf.split("\\n");
+          buf = lines.pop() || "";
+          for (var li = 0; li < lines.length; li++) {
+            var line = lines[li];
+            if (!line.startsWith("data: ")) continue;
+            try {
+              var ev = JSON.parse(line.slice(6));
+              if (ev.type === "chunk") {
+                t.messages[assistantIdx].text += ev.text;
+                renderTerminalMessages();
+              } else if (ev.type === "done") {
+                t.messages[assistantIdx].streaming = false;
+                renderTerminalMessages();
+              } else if (ev.type === "error") {
+                t.messages[assistantIdx].text += "\\n[Error: " + ev.message + "]";
+                t.messages[assistantIdx].streaming = false;
+                renderTerminalMessages();
+              }
+            } catch (_) {}
+          }
+        }
+        t.messages[assistantIdx].streaming = false;
+        renderTerminalMessages();
+      } catch (err) {
+        var cancelled = err && err.name === "AbortError";
+        t.messages[assistantIdx].text = cancelled
+          ? (t.messages[assistantIdx].text || "[Cancelled]")
+          : "[Failed: " + String(err) + "]";
+        t.messages[assistantIdx].streaming = false;
+        renderTerminalMessages();
+      } finally {
+        t.busy = false;
+        t.abortController = null;
+        renderTerminalTabs();
+        var tInput2 = $("terminal-input");
+        if (tInput2) tInput2.focus();
+      }
+    }
+
+    function autoResizeTerminalInput() {
+      var el = $("terminal-input");
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    }
+
+    if (terminalNewBtn) terminalNewBtn.addEventListener("click", function() { createNewTerminal(false); });
+    if (terminalNewDangerousBtn) terminalNewDangerousBtn.addEventListener("click", function() { createNewTerminal(true); });
+
+    if (terminalTabsEl) {
+      terminalTabsEl.addEventListener("click", function(e) {
+        var closeEl = e.target.closest("[data-close-terminal]");
+        if (closeEl) {
+          e.stopPropagation();
+          closeTerminal(closeEl.getAttribute("data-close-terminal"));
+          return;
+        }
+        var tabEl = e.target.closest("[data-terminal-id]");
+        if (tabEl) switchTerminal(tabEl.getAttribute("data-terminal-id"));
+      });
+    }
+
+    if (terminalForm) {
+      terminalForm.addEventListener("submit", function(e) {
+        e.preventDefault();
+        sendTerminalMsg();
+      });
+    }
+
+    if (terminalInput) {
+      terminalInput.addEventListener("input", autoResizeTerminalInput);
+      terminalInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendTerminalMsg();
+        }
+      });
+    }
+
+    // Update terminal busy indicators every second
+    setInterval(function() {
+      if (!activeTerminalId) return;
+      var t = terminalState[activeTerminalId];
+      if (!t || !t.busy) return;
+      var indicators = terminalViewport ? terminalViewport.querySelectorAll(".terminal-busy-indicator") : [];
+      for (var i = 0; i < indicators.length; i++) {
+        indicators[i].textContent = fmtElapsed(Date.now() - t.startedAt);
       }
     }, 1000);`;

@@ -9,6 +9,9 @@ import {
   uploadPendingAttachments, listPendingAttachments, deletePendingAttachment, cleanupPendingAttachments,
 } from "./services/attachments";
 import { readLogs } from "./services/logs";
+import {
+  createTerminal, listTerminals, getTerminal, sendMessage as sendTerminalMessage, killTerminal,
+} from "./services/terminals";
 
 export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
   const server = Bun.serve({
@@ -253,6 +256,80 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
       if (url.pathname === "/api/logs") {
         const tail = clampInt(url.searchParams.get("tail"), 200, 20, 2000);
         return json(await readLogs(tail));
+      }
+
+      // ── Terminal routes ──
+      if (url.pathname === "/api/terminals" && req.method === "GET") {
+        return json({ ok: true, terminals: listTerminals() });
+      }
+
+      if (url.pathname === "/api/terminals" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const result = createTerminal({
+            label: body?.label,
+            dangerous: body?.dangerous === true,
+          });
+          return json({ ok: true, ...result });
+        } catch (err) {
+          return json({ ok: false, error: String(err) });
+        }
+      }
+
+      const termMatch = url.pathname.match(/^\/api\/terminals\/([^/]+)(?:\/(send))?$/);
+      if (termMatch) {
+        const termId = decodeURIComponent(termMatch[1]);
+        const action = termMatch[2];
+
+        if (req.method === "POST" && action === "send") {
+          const terminal = getTerminal(termId);
+          if (!terminal) return json({ ok: false, error: "Terminal not found" });
+          if (terminal.busy) return json({ ok: false, error: "Terminal is busy" });
+
+          try {
+            const body = await req.json();
+            const message = String(body?.message ?? "").trim();
+            if (!message) return json({ ok: false, error: "message required" });
+
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({
+              async start(controller) {
+                const send = (data: object) => {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+                };
+                try {
+                  await sendTerminalMessage(
+                    termId,
+                    message,
+                    (chunk) => send({ type: "chunk", text: chunk }),
+                    (sessionId) => send({ type: "session", sessionId })
+                  );
+                  send({ type: "done" });
+                } catch (err) {
+                  send({ type: "error", message: String(err) });
+                } finally {
+                  controller.close();
+                }
+              },
+            });
+
+            return new Response(stream, {
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+              },
+            });
+          } catch (err) {
+            return json({ ok: false, error: String(err) });
+          }
+        }
+
+        if (req.method === "DELETE" && !action) {
+          const removed = killTerminal(termId);
+          return json({ ok: removed });
+        }
       }
 
       if (url.pathname === "/api/chat" && req.method === "POST") {
