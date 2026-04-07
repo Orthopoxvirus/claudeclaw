@@ -50,16 +50,24 @@ export function createTerminal(opts?: {
     args.push("--dangerously-skip-permissions");
   }
 
-  const ptyProcess = pty.spawn("claude", args, {
+  // Build a clean env — Bun's process.env can have undefined values that break node-pty
+  const cleanEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v === "string") cleanEnv[k] = v;
+  }
+  cleanEnv.TERM = "xterm-256color";
+  cleanEnv.COLORTERM = "truecolor";
+
+  // Spawn via bash -lic so shell profile is loaded (PATH, etc.)
+  const shellCmd = ["claude", ...args].join(" ");
+  console.log(`[${new Date().toLocaleTimeString()}] Terminal PTY spawn: bash -c "${shellCmd}" (cwd: ${cleanEnv.HOME || "/config"})`);
+
+  const ptyProcess = pty.spawn("bash", ["-c", shellCmd], {
     name: "xterm-256color",
     cols,
     rows,
-    cwd: process.env.HOME || "/config",
-    env: {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-    } as Record<string, string>,
+    cwd: cleanEnv.HOME || "/config",
+    env: cleanEnv,
   });
 
   const state: TerminalState = {
