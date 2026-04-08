@@ -313,6 +313,20 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         }
       }
 
+      if (url.pathname === "/api/environment/restart" && req.method === "POST") {
+        // Save, then exit — systemd will restart us with the new env
+        try {
+          const body = await req.json();
+          if (body?.content != null) {
+            await writeFile(envFilePath, String(body.content), { mode: 0o600 });
+          }
+          setTimeout(() => process.exit(0), 500);
+          return json({ ok: true, message: "Restarting..." });
+        } catch (err) {
+          return json({ ok: false, error: String(err) });
+        }
+      }
+
       if (url.pathname === "/api/environment" && req.method === "PUT") {
         try {
           const body = await req.json();

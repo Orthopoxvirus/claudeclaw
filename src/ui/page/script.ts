@@ -1776,15 +1776,35 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
 
     async function restartService() {
       var status = $("env-status");
-      if (status) status.textContent = "Restarting...";
+      var editor = $("env-editor");
+      if (status) status.textContent = "Saving & restarting...";
       try {
-        // Save first, then signal restart needed
-        await saveEnvironment();
-        if (status) {
-          status.textContent = "Saved. Restart the service manually: sudo systemctl restart claudeclaw";
-        }
+        await fetch("/api/environment/restart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: editor ? editor.value : null }),
+        });
+        // Service will exit and systemd restarts it — poll until it's back
+        if (status) status.textContent = "Restarting...";
+        var attempts = 0;
+        var poll = setInterval(async function() {
+          attempts++;
+          try {
+            var res = await fetch("/api/health");
+            if (res.ok) {
+              clearInterval(poll);
+              if (status) status.textContent = "Restarted";
+              setTimeout(function() { if (status) status.textContent = ""; }, 3000);
+            }
+          } catch(_) {
+            if (attempts > 30) {
+              clearInterval(poll);
+              if (status) status.textContent = "Restart timed out — refresh page";
+            }
+          }
+        }, 1000);
       } catch (err) {
-        if (status) status.textContent = "Error";
+        if (status) status.textContent = "Restarting...";
       }
     }
 
