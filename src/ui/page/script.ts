@@ -1209,9 +1209,11 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     const tabDashboardBtn = $("tab-dashboard");
     const tabChatBtn = $("tab-chat");
     const tabTerminalsBtn = $("tab-terminals");
+    const tabEnvironmentBtn = $("tab-environment");
     const dashboardPanel = $("dashboard-panel");
     const chatPanel = $("chat-panel");
     const terminalsPanel = $("terminals-panel");
+    const environmentPanel = $("environment-panel");
     const chatMessages = $("chat-messages");
     const chatForm = $("chat-form");
     const chatInput = $("chat-input");
@@ -1230,8 +1232,8 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
     })();
 
     function setActiveTab(tab) {
-      const allBtns = [tabDashboardBtn, tabChatBtn, tabTerminalsBtn];
-      const allPanels = [dashboardPanel, chatPanel, terminalsPanel];
+      const allBtns = [tabDashboardBtn, tabChatBtn, tabTerminalsBtn, tabEnvironmentBtn];
+      const allPanels = [dashboardPanel, chatPanel, terminalsPanel, environmentPanel];
       allBtns.forEach(b => { if (b) { b.classList.remove("tab-btn-active"); b.setAttribute("aria-selected", "false"); } });
       allPanels.forEach(p => { if (p) p.hidden = true; });
 
@@ -1250,12 +1252,18 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         if (terminalsPanel) terminalsPanel.hidden = false;
         var tInput = $("terminal-input");
         if (tInput && activeTerminalId) tInput.focus();
+      } else if (tab === "environment") {
+        tabEnvironmentBtn && tabEnvironmentBtn.classList.add("tab-btn-active");
+        tabEnvironmentBtn && tabEnvironmentBtn.setAttribute("aria-selected", "true");
+        if (environmentPanel) environmentPanel.hidden = false;
+        loadEnvironment();
       }
     }
 
     if (tabDashboardBtn) tabDashboardBtn.addEventListener("click", () => setActiveTab("dashboard"));
     if (tabChatBtn) tabChatBtn.addEventListener("click", () => setActiveTab("chat"));
     if (tabTerminalsBtn) tabTerminalsBtn.addEventListener("click", () => setActiveTab("terminals"));
+    if (tabEnvironmentBtn) tabEnvironmentBtn.addEventListener("click", () => setActiveTab("environment"));
 
     renderChatHistory();
 
@@ -1726,4 +1734,72 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       if (activeTerminalId && termState[activeTerminalId] && termState[activeTerminalId].fitAddon) {
         try { termState[activeTerminalId].fitAddon.fit(); } catch(_) {}
       }
-    });`;
+    });
+
+    // ── Environment ──
+    var envLoaded = false;
+
+    async function loadEnvironment() {
+      var editor = $("env-editor");
+      if (!editor) return;
+      try {
+        var res = await fetch("/api/environment");
+        var data = await res.json();
+        if (data.ok) {
+          editor.value = data.content;
+          envLoaded = true;
+        }
+      } catch (err) {
+        console.error("Failed to load environment:", err);
+      }
+    }
+
+    async function saveEnvironment() {
+      var editor = $("env-editor");
+      var status = $("env-status");
+      if (!editor) return;
+      try {
+        var res = await fetch("/api/environment", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: editor.value }),
+        });
+        var data = await res.json();
+        if (data.ok && status) {
+          status.textContent = "Saved";
+          setTimeout(function() { status.textContent = ""; }, 3000);
+        }
+      } catch (err) {
+        if (status) status.textContent = "Save failed";
+      }
+    }
+
+    async function restartService() {
+      var status = $("env-status");
+      if (status) status.textContent = "Restarting...";
+      try {
+        // Save first, then signal restart needed
+        await saveEnvironment();
+        if (status) {
+          status.textContent = "Saved. Restart the service manually: sudo systemctl restart claudeclaw";
+        }
+      } catch (err) {
+        if (status) status.textContent = "Error";
+      }
+    }
+
+    var envSaveBtn = $("env-save");
+    var envRestartBtn = $("env-restart");
+    if (envSaveBtn) envSaveBtn.addEventListener("click", saveEnvironment);
+    if (envRestartBtn) envRestartBtn.addEventListener("click", restartService);
+
+    // Ctrl+S to save in environment editor
+    var envEditor = $("env-editor");
+    if (envEditor) {
+      envEditor.addEventListener("keydown", function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+          e.preventDefault();
+          saveEnvironment();
+        }
+      });
+    }`;

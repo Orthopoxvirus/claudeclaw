@@ -1459,6 +1459,85 @@ export const pageStyles = String.raw`    :root {
       margin-left: 6px;
     }
 
+    /* ── Environment panel ── */
+    .environment-panel {
+      display: flex;
+      flex-direction: column;
+      width: min(100%, 920px);
+      min-width: min(680px, 100%);
+      max-width: 100%;
+      height: calc(100svh - 280px);
+      min-height: 400px;
+      text-align: left;
+      border: 1px solid #ffffff22;
+      border-radius: 16px;
+      background:
+        radial-gradient(120% 100% at 100% 0%, #7dc5ff12, transparent 55%),
+        linear-gradient(180deg, #0e1a2a88 0%, #0a1220a8 100%);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 14px 34px #00000045;
+      overflow: hidden;
+    }
+    .env-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #ffffff12;
+      background: #080f1c66;
+      flex-shrink: 0;
+    }
+    .env-title {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #a8b8d0;
+    }
+    .env-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .env-status {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: #3cb879;
+      transition: opacity 0.3s;
+    }
+    .env-editor-wrap {
+      flex: 1;
+      overflow: hidden;
+      padding: 4px;
+    }
+    .env-editor {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #0a1220;
+      color: #e4eefb;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      padding: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: #3a5a80 transparent;
+      box-sizing: border-box;
+    }
+    .env-editor:focus { outline: none; }
+    .env-editor::placeholder { color: #4a6a8a; }
+    .env-footer {
+      flex-shrink: 0;
+      padding: 8px 16px;
+      border-top: 1px solid #ffffff12;
+      background: #080f1c66;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      color: #5a7a9a;
+      letter-spacing: 0.03em;
+    }
+
     @media (max-width: 640px) {
       .stage {
         padding-top: 50px;

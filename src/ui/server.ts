@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "fs/promises";
 import { htmlPage } from "./page/html";
 import { clampInt, json } from "./http";
 import type { StartWebUiOptions, WebServerHandle } from "./types";
@@ -298,6 +299,29 @@ export function startWebUi(opts: StartWebUiOptions): WebServerHandle {
         return server.upgrade(req, { data: { terminalId: termId } })
           ? undefined as unknown as Response
           : new Response("WebSocket upgrade failed", { status: 500 });
+      }
+
+      // ── Environment file routes ──
+      const envFilePath = (process.env.HOME || "/home/claude") + "/.claude/environment";
+
+      if (url.pathname === "/api/environment" && req.method === "GET") {
+        try {
+          const content = await readFile(envFilePath, "utf-8");
+          return json({ ok: true, content });
+        } catch {
+          return json({ ok: true, content: "" });
+        }
+      }
+
+      if (url.pathname === "/api/environment" && req.method === "PUT") {
+        try {
+          const body = await req.json();
+          const content = String(body?.content ?? "");
+          await writeFile(envFilePath, content, { mode: 0o600 });
+          return json({ ok: true });
+        } catch (err) {
+          return json({ ok: false, error: String(err) });
+        }
       }
 
       if (url.pathname === "/api/chat" && req.method === "POST") {

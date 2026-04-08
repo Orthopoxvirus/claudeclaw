@@ -119,6 +119,7 @@ ${pageStyles}
       <button class="tab-btn tab-btn-active" id="tab-dashboard" type="button" role="tab" aria-selected="true" aria-controls="dashboard-panel">Dashboard</button>
       <button class="tab-btn" id="tab-chat" type="button" role="tab" aria-selected="false" aria-controls="chat-panel">Chat</button>
       <button class="tab-btn" id="tab-terminals" type="button" role="tab" aria-selected="false" aria-controls="terminals-panel">Terminals</button>
+      <button class="tab-btn" id="tab-environment" type="button" role="tab" aria-selected="false" aria-controls="environment-panel">Environment</button>
     </nav>
     <div id="dashboard-panel">
     <section class="hero">
@@ -229,6 +230,20 @@ ${pageStyles}
           Create a terminal to start an independent Claude Code session.
         </div>
       </div>
+    </div>
+    <div id="environment-panel" class="environment-panel" hidden>
+      <div class="env-header">
+        <div class="env-title">Environment Variables</div>
+        <div class="env-actions">
+          <span class="env-status" id="env-status"></span>
+          <button class="terminal-new-btn" id="env-save" type="button">Save</button>
+          <button class="terminal-new-btn terminal-new-dangerous" id="env-restart" type="button">Restart Service</button>
+        </div>
+      </div>
+      <div class="env-editor-wrap">
+        <textarea class="env-editor" id="env-editor" spellcheck="false" placeholder="# KEY=VALUE (one per line)"></textarea>
+      </div>
+      <div class="env-footer">Changes require a service restart to take effect.</div>
     </div>
   </main>
   <input type="file" id="attachment-file-input" multiple accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,.xml,.yaml,.yml,.py,.ts,.js,.jsx,.tsx,.html,.css,.zip,.tar,.gz" style="display:none" />
