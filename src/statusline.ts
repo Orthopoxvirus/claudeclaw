@@ -1,6 +1,6 @@
 import { join } from "path";
 
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
+const HEARTBEAT_DIR = join(process.cwd(), "claudeclaw");
 
 // Write state.json so the statusline script can read fresh data
 export interface StateData {

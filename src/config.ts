@@ -3,7 +3,7 @@ import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { normalizeTimezoneName, resolveTimezoneOffsetMinutes } from "./timezone";
 
-const HEARTBEAT_DIR = join(process.cwd(), ".claude", "claudeclaw");
+const HEARTBEAT_DIR = join(process.cwd(), "claudeclaw");
 const SETTINGS_FILE = join(HEARTBEAT_DIR, "settings.json");
 const JOBS_DIR = join(HEARTBEAT_DIR, "jobs");
 const LOGS_DIR = join(HEARTBEAT_DIR, "logs");

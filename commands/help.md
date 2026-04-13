@@ -33,13 +33,13 @@ Display this help information to the user:
 **How it works:**
 - The daemon runs in the background checking your schedule every 60 seconds
 - A **heartbeat** prompt runs at a fixed interval (default: every 15 minutes)
-- **Jobs** are markdown files in `.claude/claudeclaw/jobs/` with cron schedules (timezone-aware, evaluated in configured `timezone`)
+- **Jobs** are markdown files in `claudeclaw/jobs/` with cron schedules (timezone-aware, evaluated in configured `timezone`)
 - The statusline shows a live countdown to the next run
 
 **Configuration:**
-- `.claude/claudeclaw/settings.json` — Main config (heartbeat, telegram, security)
-- `.claude/claudeclaw/settings.json` — Main config (heartbeat, telegram, security, web)
-- `.claude/claudeclaw/jobs/*.md` — Cron jobs with schedule frontmatter and a prompt body
+- `claudeclaw/settings.json` — Main config (heartbeat, telegram, security)
+- `claudeclaw/settings.json` — Main config (heartbeat, telegram, security, web)
+- `claudeclaw/jobs/*.md` — Cron jobs with schedule frontmatter and a prompt body
 
 **Job file format:**
 ```markdown
@@ -54,6 +54,6 @@ Schedule uses standard cron syntax: `minute hour day-of-month month day-of-week`
 **Note:** Bun is required to run the daemon. It will be auto-installed on first `/heartbeat:start` if missing.
 
 **Telegram:**
-- Configure in `.claude/claudeclaw/settings.json` under `telegram`
+- Configure in `claudeclaw/settings.json` under `telegram`
 - Daemon mode can run Telegram polling in-process when token is configured
 - Startup trigger `start --trigger --telegram` and daemon `send --telegram` can forward responses

@@ -5,7 +5,7 @@ Read MULTI_SESSION_SPEC.md for the full specification.
 ## What to do:
 
 1. **Create `src/sessionManager.ts`** — Manages thread-to-session mappings
-   - Store in `.claude/claudeclaw/sessions.json`
+   - Store in `claudeclaw/sessions.json`
    - getOrCreateSession(threadId) / removeSession(threadId) / listSessions()
    - Bootstrap new sessions by calling Claude CLI with `--output-format json` to get session_id
    - Falls back to global session.json when no threadId

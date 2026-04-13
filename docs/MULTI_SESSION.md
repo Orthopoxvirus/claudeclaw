@@ -56,7 +56,7 @@ Each queue prevents concurrent `--resume` calls on the same session (which would
 
 ## Storage
 
-### Global session: `.claude/claudeclaw/session.json`
+### Global session: `claudeclaw/session.json`
 ```json
 {
   "sessionId": "uuid",
@@ -67,7 +67,7 @@ Each queue prevents concurrent `--resume` calls on the same session (which would
 }
 ```
 
-### Thread sessions: `.claude/claudeclaw/sessions.json`
+### Thread sessions: `claudeclaw/sessions.json`
 ```json
 {
   "threads": {
