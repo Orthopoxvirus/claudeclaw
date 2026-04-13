@@ -113,6 +113,9 @@ export interface Settings {
   security: SecurityConfig;
   web: WebConfig;
   stt: SttConfig;
+  /** Max duration for a single Claude Code invocation, in milliseconds.
+   *  Default: 30 minutes. */
+  sessionTimeoutMs: number;
 }
 
 export interface AgenticMode {
@@ -274,6 +277,10 @@ function parseSettings(raw: Record<string, any>): Settings {
       baseUrl: typeof raw.stt?.baseUrl === "string" ? raw.stt.baseUrl.trim() : "",
       model: typeof raw.stt?.model === "string" ? raw.stt.model.trim() : "",
     },
+    sessionTimeoutMs:
+      Number.isFinite(raw.sessionTimeoutMs) && raw.sessionTimeoutMs > 0
+        ? Number(raw.sessionTimeoutMs)
+        : 30 * 60 * 1000,
   };
 }
 
