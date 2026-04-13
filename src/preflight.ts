@@ -15,7 +15,7 @@ import {
   type Dirent,
 } from "fs";
 import { join, dirname } from "path";
-import { homedir, tmpdir } from "os";
+import { homedir } from "os";
 import { fileURLToPath } from "url";
 
 // ── Plugin repos to install (one plugin per repo) ───────────────────
@@ -43,8 +43,16 @@ const OFFICIAL_PLUGINS = [
 // ── Config ──────────────────────────────────────────────────────────
 const OFFICIAL_REPO = "https://github.com/anthropics/claude-plugins-official";
 const PLUGINS_DIR = join(homedir(), ".claude", "plugins");
+const SCRATCH_DIR = join(PLUGINS_DIR, ".tmp");
 const INST_FILE = join(PLUGINS_DIR, "installed_plugins.json");
 const MKTP_FILE = join(PLUGINS_DIR, "known_marketplaces.json");
+
+// Return a scratch dir on the same filesystem as PLUGINS_DIR so the final
+// renameSync into marketplaces/ never crosses a filesystem boundary (EXDEV).
+function scratchTempDir(prefix: string): string {
+  mkdirSync(SCRATCH_DIR, { recursive: true });
+  return mkdtempSync(join(SCRATCH_DIR, prefix));
+}
 const WHISPER_WARMUP_SCRIPT = fileURLToPath(new URL("./whisper-warmup.ts", import.meta.url));
 
 interface PluginEntry {
@@ -168,7 +176,7 @@ function installRepoPlugin(
 ): "installed" | "enabled" | "skipped" {
   let tempDir: string | null = null;
   try {
-    tempDir = mkdtempSync(join(tmpdir(), "claude-plugin-"));
+    tempDir = scratchTempDir("claude-plugin-");
     run(`git clone --quiet "${repoUrl}" "${tempDir}"`);
 
     const marketplaceJsonPath = join(tempDir, ".claude-plugin", "marketplace.json");
@@ -297,7 +305,7 @@ function installOfficialPlugins(
   // Clone the monorepo once
   let tempDir: string | null = null;
   try {
-    tempDir = mkdtempSync(join(tmpdir(), "claude-official-"));
+    tempDir = scratchTempDir("claude-official-");
     console.log(`  cloning ${marketplaceName} (${needed.length} plugin(s) to install)...`);
     run(`git clone --quiet --depth 1 "${OFFICIAL_REPO}" "${tempDir}"`);
 
