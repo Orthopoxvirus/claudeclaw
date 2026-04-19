@@ -1584,10 +1584,109 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
       showTerminalViewport();
     }
 
+    // Attach a local xterm UI + WebSocket to an existing backend terminal.
+    // Used by both "create new" and "restore on page load".
+    function attachTerminalUi(data) {
+      if (!terminalViewport || typeof Terminal === "undefined") return null;
+      if (termState[data.id]) return termState[data.id];
+
+      var term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', monospace",
+        theme: {
+          background: "#0a1220",
+          foreground: "#e4eefb",
+          cursor: "#9be7ff",
+          selectionBackground: "#1a4a7a88",
+          black: "#0a1220",
+          red: "#ff6b6b",
+          green: "#3cb879",
+          yellow: "#f0c674",
+          blue: "#7dc5ff",
+          magenta: "#c792ea",
+          cyan: "#9be7ff",
+          white: "#e4eefb",
+          brightBlack: "#5a7a9a",
+          brightRed: "#ff9b9b",
+          brightGreen: "#6fd8a0",
+          brightYellow: "#f8de7e",
+          brightBlue: "#a8dcff",
+          brightMagenta: "#ddb3f5",
+          brightCyan: "#bef0ff",
+          brightWhite: "#ffffff",
+        },
+        allowProposedApi: true,
+        scrollback: 5000,
+      });
+
+      var fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+
+      var container = document.createElement("div");
+      container.className = "terminal-xterm-container";
+      container.setAttribute("data-terminal-id", data.id);
+      terminalViewport.appendChild(container);
+
+      term.open(container);
+      try { fitAddon.fit(); } catch(_) {}
+
+      var wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+      var wsUrl = wsProtocol + "//" + location.host + "/api/terminals/" + encodeURIComponent(data.id) + "/ws";
+      var ws = new WebSocket(wsUrl);
+
+      ws.onopen = function() {
+        // Sync the PTY to this client's current viewport — the PTY may have
+        // been sized for an earlier/different viewport if we're reattaching.
+        if (typeof term.cols === "number" && typeof term.rows === "number") {
+          try {
+            ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+          } catch(_) {}
+        }
+      };
+
+      ws.onmessage = function(event) {
+        try {
+          var msg = JSON.parse(event.data);
+          if (msg.type === "output") {
+            term.write(msg.data);
+          } else if (msg.type === "exit") {
+            term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
+          }
+        } catch(_) {}
+      };
+
+      ws.onclose = function() {
+        term.write("\r\n\x1b[90m[Disconnected]\x1b[0m\r\n");
+      };
+
+      term.onData(function(input) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input", data: input }));
+        }
+      });
+
+      term.onResize(function(size) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "resize", cols: size.cols, rows: size.rows }));
+        }
+      });
+
+      termState[data.id] = {
+        id: data.id,
+        label: data.label,
+        dangerous: data.dangerous,
+        xterm: term,
+        fitAddon: fitAddon,
+        ws: ws,
+        containerEl: container,
+      };
+      return termState[data.id];
+    }
+
     async function createNewTerminal(dangerous) {
       if (!terminalViewport || typeof Terminal === "undefined") return;
 
-      // Get approximate dimensions from viewport
       var vpRect = terminalViewport.getBoundingClientRect();
       var approxCols = Math.max(40, Math.floor(vpRect.width / 9));
       var approxRows = Math.max(10, Math.floor(vpRect.height / 18));
@@ -1600,97 +1699,30 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
         });
         var data = await res.json();
         if (!data.ok) { console.error("Create terminal failed:", data.error); return; }
-
-        // Create xterm instance
-        var term = new Terminal({
-          cursorBlink: true,
-          fontSize: 13,
-          fontFamily: "'JetBrains Mono', monospace",
-          theme: {
-            background: "#0a1220",
-            foreground: "#e4eefb",
-            cursor: "#9be7ff",
-            selectionBackground: "#1a4a7a88",
-            black: "#0a1220",
-            red: "#ff6b6b",
-            green: "#3cb879",
-            yellow: "#f0c674",
-            blue: "#7dc5ff",
-            magenta: "#c792ea",
-            cyan: "#9be7ff",
-            white: "#e4eefb",
-            brightBlack: "#5a7a9a",
-            brightRed: "#ff9b9b",
-            brightGreen: "#6fd8a0",
-            brightYellow: "#f8de7e",
-            brightBlue: "#a8dcff",
-            brightMagenta: "#ddb3f5",
-            brightCyan: "#bef0ff",
-            brightWhite: "#ffffff",
-          },
-          allowProposedApi: true,
-          scrollback: 5000,
-        });
-
-        var fitAddon = new FitAddon.FitAddon();
-        term.loadAddon(fitAddon);
-
-        // Create container div
-        var container = document.createElement("div");
-        container.className = "terminal-xterm-container";
-        container.setAttribute("data-terminal-id", data.id);
-        terminalViewport.appendChild(container);
-
-        term.open(container);
-        try { fitAddon.fit(); } catch(_) {}
-
-        // Connect WebSocket
-        var wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-        var wsUrl = wsProtocol + "//" + location.host + "/api/terminals/" + encodeURIComponent(data.id) + "/ws";
-        var ws = new WebSocket(wsUrl);
-
-        ws.onmessage = function(event) {
-          try {
-            var msg = JSON.parse(event.data);
-            if (msg.type === "output") {
-              term.write(msg.data);
-            } else if (msg.type === "exit") {
-              term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
-            }
-          } catch(_) {}
-        };
-
-        ws.onclose = function() {
-          term.write("\r\n\x1b[90m[Disconnected]\x1b[0m\r\n");
-        };
-
-        // Forward keypresses to backend
-        term.onData(function(input) {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "input", data: input }));
-          }
-        });
-
-        // Handle resize
-        term.onResize(function(size) {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "resize", cols: size.cols, rows: size.rows }));
-          }
-        });
-
-        termState[data.id] = {
-          id: data.id,
-          label: data.label,
-          dangerous: data.dangerous,
-          xterm: term,
-          fitAddon: fitAddon,
-          ws: ws,
-          containerEl: container,
-        };
-
+        if (!attachTerminalUi(data)) return;
         switchTerminal(data.id);
       } catch (err) {
         console.error("Create terminal error:", err);
+      }
+    }
+
+    // On page load / tab reopen, reattach any terminals the daemon is still
+    // holding open. PTYs survive browser close — the server keeps the process
+    // and scrollback in memory and replays it on the new WebSocket.
+    async function restoreTerminals() {
+      if (typeof Terminal === "undefined") return;
+      try {
+        var res = await fetch("/api/terminals");
+        var data = await res.json();
+        if (!data || !data.ok || !Array.isArray(data.terminals)) return;
+        for (var i = 0; i < data.terminals.length; i++) {
+          attachTerminalUi(data.terminals[i]);
+        }
+        renderTerminalTabs();
+        var ids = Object.keys(termState);
+        if (ids.length > 0 && !activeTerminalId) switchTerminal(ids[0]);
+      } catch (err) {
+        console.error("Restore terminals error:", err);
       }
     }
 
@@ -1715,6 +1747,9 @@ export const pageScript = String.raw`    const $ = (id) => document.getElementBy
 
     if (terminalNewBtn) terminalNewBtn.addEventListener("click", function() { createNewTerminal(false); });
     if (terminalNewDangerousBtn) terminalNewDangerousBtn.addEventListener("click", function() { createNewTerminal(true); });
+
+    // Reattach any terminals the daemon is still running from a previous session.
+    restoreTerminals();
 
     if (terminalTabsEl) {
       terminalTabsEl.addEventListener("click", function(e) {
