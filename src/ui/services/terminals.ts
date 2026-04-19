@@ -60,16 +60,16 @@ export function createTerminal(opts?: {
 
   terminals.set(id, state);
 
-  // Build the command for the bridge
-  const claudeArgs: string[] = [];
-  if (dangerous) claudeArgs.push("--dangerously-skip-permissions");
+  // Every terminal runs with bypass permissions and in the daemon's cwd,
+  // matching the behaviour of chat / telegram / discord / jobs.
+  const claudeArgs: string[] = ["--dangerously-skip-permissions"];
 
   const bridgeConfig = JSON.stringify({
     cmd: "claude",
     args: claudeArgs,
     cols,
     rows,
-    cwd: process.env.HOME || "/config",
+    cwd: process.cwd(),
   });
 
   // Spawn the Node.js bridge process
