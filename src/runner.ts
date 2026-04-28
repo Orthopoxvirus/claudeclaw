@@ -320,8 +320,8 @@ export async function runCompact(
  * High-level compact: resolves session + settings internally.
  * Returns { success, message }.
  */
-export async function compactCurrentSession(): Promise<{ success: boolean; message: string }> {
-  const existing = await getSession();
+export async function compactCurrentSession(threadId?: string): Promise<{ success: boolean; message: string }> {
+  const existing = threadId ? await getThreadSession(threadId) : await getSession();
   if (!existing) return { success: false, message: "No active session to compact." };
 
   const settings = getSettings();

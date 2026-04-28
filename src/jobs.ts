@@ -72,6 +72,16 @@ export async function loadJobs(): Promise<Job[]> {
   return jobs;
 }
 
+/**
+ * Prepend the scheduled-job header so the firing Claude session can distinguish
+ * legitimate ClaudeClaw job bodies from unattributed prompt-injection attempts.
+ * Idempotent: returns the prompt as-is when the header is already present.
+ */
+export function withScheduledJobHeader(jobName: string, prompt: string): string {
+  if (/^\s*\[ClaudeClaw scheduled job:\s*[^\]]+\]/.test(prompt)) return prompt;
+  return `[ClaudeClaw scheduled job: ${jobName}]\n\n${prompt}`;
+}
+
 export async function clearJobSchedule(jobName: string): Promise<void> {
   const path = join(JOBS_DIR, `${jobName}.md`);
   const content = await Bun.file(path).text();

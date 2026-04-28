@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import { run, runUserMessage, streamUserMessage, bootstrap, ensureProjectClaudeMd, loadHeartbeatPromptTemplate } from "../runner";
 import { writeState, type StateData } from "../statusline";
 import { cronMatches, nextCronMatch } from "../cron";
-import { clearJobSchedule, loadJobs } from "../jobs";
+import { clearJobSchedule, loadJobs, withScheduledJobHeader } from "../jobs";
 import { writePidFile, cleanupPidFile, checkExistingDaemon } from "../pid";
 import { initConfig, loadSettings, reloadSettings, resolvePrompt, type HeartbeatConfig, type Settings } from "../config";
 import { augmentPromptWithAttachments } from "../ui/services/attachments";
@@ -699,6 +699,7 @@ export async function start(args: string[] = []) {
       if (cronMatches(job.schedule, now, currentSettings.timezoneOffsetMinutes)) {
         resolvePrompt(job.prompt)
           .then((prompt) => augmentPromptWithAttachments(job.name, prompt))
+          .then((prompt) => withScheduledJobHeader(job.name, prompt))
           .then((prompt) => run(job.name, prompt))
           .then((r) => {
             if (job.notify === false) return;

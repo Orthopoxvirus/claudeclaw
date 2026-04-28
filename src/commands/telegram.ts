@@ -1,6 +1,6 @@
 import { ensureProjectClaudeMd, run, runUserMessage, compactCurrentSession } from "../runner";
 import { getSettings, loadSettings } from "../config";
-import { resetSession, peekSession } from "../sessions";
+import { peekThreadSession, removeThreadSession } from "../sessionManager";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -599,6 +599,11 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const chatType = message.chat.type;
   const isPrivate = chatType === "private";
   const isGroup = chatType === "group" || chatType === "supergroup";
+  // Session thread isolation: each Telegram user gets their own session in private
+  // chats; group chats share one session per chat (per topic, if forum-style).
+  const sessionThreadId = isPrivate
+    ? `telegram:user:${userId}`
+    : `telegram:chat:${chatId}${threadId ? `:topic:${threadId}` : ""}`;
   const hasImage = Boolean((message.photo && message.photo.length > 0) || isImageDocument(message.document));
   const hasVoice = Boolean(message.voice || message.audio || isAudioDocument(message.document));
   const hasDocument = Boolean(message.document && isDocumentAttachment(message.document));
@@ -643,20 +648,20 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   }
 
   if (command === "/reset") {
-    await resetSession();
-    await sendMessage(config.token, chatId, "Global session reset. Next message starts fresh.", threadId);
+    await removeThreadSession(sessionThreadId);
+    await sendMessage(config.token, chatId, "Session reset. Next message starts fresh.", threadId);
     return;
   }
 
   if (command === "/compact") {
     await sendMessage(config.token, chatId, "⏳ Compacting session...", threadId);
-    const result = await compactCurrentSession();
+    const result = await compactCurrentSession(sessionThreadId);
     await sendMessage(config.token, chatId, result.message, threadId);
     return;
   }
 
   if (command === "/status") {
-    const session = await peekSession();
+    const session = await peekThreadSession(sessionThreadId);
     const settings = getSettings();
     if (!session) {
       await sendMessage(config.token, chatId, "📊 No active session.", threadId);
@@ -677,7 +682,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   }
 
   if (command === "/context") {
-    const session = await peekSession();
+    const session = await peekThreadSession(sessionThreadId);
     if (!session) {
       await sendMessage(config.token, chatId, "No active session.", threadId);
       return;
@@ -850,7 +855,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
       promptParts.push("The user attached a document, but downloading it failed. Respond and ask them to resend.");
     }
     const prefixedPrompt = promptParts.join("\n");
-    const result = await runUserMessage("telegram", prefixedPrompt);
+    const result = await runUserMessage("telegram", prefixedPrompt, sessionThreadId);
 
     if (result.exitCode !== 0) {
       await sendMessage(config.token, chatId, `Error (exit ${result.exitCode}): ${result.stderr || "Unknown error"}`, threadId);
